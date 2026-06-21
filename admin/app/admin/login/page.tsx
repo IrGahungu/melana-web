@@ -1,0 +1,138 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function LoginPage() {
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!whatsappNumber || !password) {
+      alert("Please fill in all fields");
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    try {
+      console.log("Attempting to log in with:", { whatsapp_number: whatsappNumber, password });
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ whatsapp_number: whatsappNumber, password }),
+      });
+
+      console.log("API Response Status:", res.status, res.statusText);
+
+      setLoading(false);
+
+      if (res.ok) {
+        console.log("Login successful, redirecting to dashboard...");
+        // Perform a hard navigation to ensure the new cookie is sent to the server
+        window.location.assign("/admin/dashboard");
+      } else {
+        const data = await res.json();
+        console.error("Login failed. API response:", data);
+        setError(data.error || "Login failed. Please check your credentials.");
+      }
+    } catch (err) {
+      setLoading(false);
+      setError("Something went wrong. Please try again later.");
+    }
+  }
+
+  return (
+    
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        padding: 20,
+        backgroundImage: "url('/assets/labo.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat"
+      }}>
+        <h1 style={{ 
+          textAlign: "center", 
+          marginBottom: 40, 
+          fontWeight: "bold",
+          color: "#fff",
+          textShadow: "2px 2px 8px rgba(0,0,0,0.7)"
+        }}>
+          WELCOME ONBOARD M.SC. I.T JEAN KEVIN GAHUNGU
+        </h1>
+        <form
+          onSubmit={submit}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            width: "100%",
+            maxWidth: 400,
+            gap: 16,
+            backgroundColor: "rgba(255, 255, 255, 0.9)",
+            padding: "40px",
+            borderRadius: "12px",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.2)"
+          }}
+        >
+          <input
+            placeholder="WhatsApp Number"
+            value={whatsappNumber}
+            onChange={(e) => setWhatsappNumber(e.target.value)}
+            style={{ padding: 10, fontSize: 16, border: "1px solid black", borderRadius: 20 }}
+          />
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ padding: 10, fontSize: 16, width: '100%', border: "1px solid black", borderRadius: 20 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: 'absolute',
+                right: 10,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#333'
+              }}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              padding: 12,
+              fontSize: 16,
+              backgroundColor: "#4CAF50",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              cursor: loading ? "not-allowed" : "pointer"
+            }}
+          >
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        {error && (
+          <p style={{ color: 'red', textAlign: 'center', marginTop: 10 }}>{error}</p>
+        )}
+        </form>
+      </div>
+    
+  );
+}

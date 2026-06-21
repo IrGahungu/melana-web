@@ -1,0 +1,1248 @@
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Image,
+  TouchableOpacity,
+  Pressable,
+  Modal,
+  ActivityIndicator,
+  TouchableWithoutFeedback,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Animated,
+  Linking,
+  Dimensions,
+} from 'react-native';
+import { Alert, TextInput } from 'react-native';
+import { useLocalSearchParams, useNavigation, router } from 'expo-router';
+import { Calendar } from 'react-native-calendars';
+import { supabase } from '@/lib/supabase';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useToastStore } from '@/stores/toastStore'; // Ensure this is before Toast
+import Toast from '@/components/Toast';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import * as SecureStore from 'expo-secure-store';
+import { API_BASE_URL } from '@/config';
+import ConfettiCannon from 'react-native-confetti-cannon';
+import MapView, { Marker } from 'react-native-maps';
+import { translations, useLanguageStore } from '@/stores/languageStore';
+
+const currencyMap: { [country: string]: string } = {
+  Burundi: 'FBU',
+  //Rwanda: 'RWF',
+  //Tanzania: 'TSH',
+  //Kenya: 'KSH',
+  //Sudan: 'SDF',
+  //Congo: 'FRC',
+  //Somalia: 'FSM',
+};
+
+const getCurrency = (country: string | null): string => {
+  return country ? currencyMap[country] || 'USD' : 'USD';
+};
+
+const DOCTOR_URL_PREFIX = "https://sqwoawoyzicvbebpgweu.supabase.co/storage/v1/object/public/doctor-images/";
+
+const SkeletonPulse = ({ children }: { children: React.ReactNode }) => {
+  const pulseAnim = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.3,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [pulseAnim]);
+
+  return <Animated.View style={{ opacity: pulseAnim }}>{children}</Animated.View>;
+};
+
+const DoctorDetailSkeleton = () => (
+  <SkeletonPulse>
+    <View style={styles.scrollContent}>
+      <View style={styles.skeletonImage} />
+      <View style={styles.detailsContainer}>
+        <View style={[styles.skeletonLine, { width: '60%', height: 24, marginBottom: 12 }]} />
+        <View style={[styles.skeletonLine, { width: '40%', height: 18, marginBottom: 20 }]} />
+        <View style={[styles.skeletonLine, { width: '100%', height: 60, marginBottom: 20 }]} />
+        <View style={[styles.skeletonLine, { width: '30%', height: 20, marginBottom: 12 }]} />
+        <View style={[styles.skeletonLine, { width: '100%', height: 250, borderRadius: 12, marginBottom: 20 }]} />
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={[styles.skeletonLine, { flex: 1, height: 45, borderRadius: 8 }]} />
+          <View style={[styles.skeletonLine, { flex: 1, height: 45, borderRadius: 8 }]} />
+        </View>
+      </View>
+    </View>
+  </SkeletonPulse>
+);
+
+type Availability = {
+  date: string;
+  times: string[];
+  booking_type?: "online" | "in-office" | "both";
+  consultation_fee_online?: number | string;
+  consultation_fee_offline?: number | string;
+};
+
+type Doctor = {
+  id: string;
+  name: string | null;
+  image: string | null;
+  specialty: string | null;
+  location: any[] | null;
+  bio: string | null;
+  work_schedule: any[] | null;
+  booking_type: "online" | "in-office" | "both" | null;
+  availability: Availability[] | null;
+  consultation_fee_online: number | null;
+  consultation_fee_offline: number | null;
+};
+
+export default function DoctorDetailScreen() {
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ id: string, location?: string }>();
+  const { id } = params;
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+  const showToast = useToastStore((state) => state.showToast);
+  const language = useLanguageStore(state => state.language);
+  const t: any = translations[language];
+
+  // State for the lock mechanism
+  const [showDetails, setShowDetails] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [isBalanceLoading, setIsBalanceLoading] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
+  const [country, setCountry] = useState<string | null>(null);
+  const VIEW_FEE = 500;
+  const [isBookingModalVisible, setIsBookingModalVisible] = useState(false);
+  const [bookingType, setBookingType] = useState<'online' | 'in-office' | null>(null);
+  const [pinCode, setPinCode] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const checkmarkScale = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [showCallCarButton, setShowCallCarButton] = useState(true);
+  const [showBookOnlineButton, setShowBookOnlineButton] = useState(true);
+  const [showBookInOfficeButton, setShowBookInOfficeButton] = useState(true);
+
+  console.log('[DoctorDetail] Initial state of showBookOnlineButton (component mount):', showBookOnlineButton);
+  console.log('[DoctorDetail] Initial state of showBookInOfficeButton (component mount):', showBookInOfficeButton);
+
+  const currentDayName = useMemo(() => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[new Date().getDay()];
+  }, []);
+
+  useEffect(() => {
+    const fetchCountry = async () => {
+      const storedCountry = await SecureStore.getItemAsync("user_country");
+      setCountry(storedCountry);
+    };
+    fetchCountry();
+
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/config/engagement-settings`);
+        if (res.ok) {
+          const data = await res.json();
+          console.log('[DoctorDetail] Initial settings fetch result:', data);
+          setShowCallCarButton(data.show_call_car_button_doctor !== false);
+          setShowBookOnlineButton(data.show_book_online_button !== false);
+          setShowBookInOfficeButton(data.show_book_in_office_button !== false);
+        }
+      } catch (error) { console.error(error); }
+    };
+    fetchSettings();
+
+    const syncChannel = supabase.channel('doctor-button-visibility')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'settings'
+      }, (payload: any) => {
+        console.log('[DoctorDetail] Real-time visibility update received:', payload);
+        if (payload.new && payload.new.key) {
+          const { key, value } = payload.new;
+          const isVisible = value !== 'false';
+          if (key === 'show_call_car_button_doctor') { console.log('-> Updating Call Car Visibility:', isVisible); setShowCallCarButton(isVisible); }
+          if (key === 'show_book_online_button') { console.log('-> Updating Book Online Visibility:', isVisible); setShowBookOnlineButton(isVisible); }
+          if (key === 'show_book_in_office_button') { console.log('-> Updating Book In Office Visibility:', isVisible); setShowBookInOfficeButton(isVisible); }
+        }
+      }).subscribe();
+
+    return () => { 
+      supabase.removeChannel(syncChannel);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (paymentSuccess) {
+      Animated.spring(checkmarkScale, {
+        toValue: 1,
+        friction: 5,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      checkmarkScale.setValue(0);
+    }
+  }, [paymentSuccess]);
+
+  useEffect(() => {
+    if (id) {
+      supabase.rpc('increment_doctor_views', { row_id: id }).then(({ error }) => {
+        if (error) console.error('Error incrementing views:', error);
+      });
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const fetchDoctor = async () => {
+      // Helper to parse array fields which might be strings from Supabase
+      const parseArrayField = (field: any) => {
+        if (Array.isArray(field)) return field; // Already an array
+        if (typeof field === 'string') {
+          try {
+            const parsed = JSON.parse(field); // Try parsing from navigation params
+            if (Array.isArray(parsed)) return parsed;
+          } catch (e) { /* Not a JSON string, proceed to next check */ }
+        }
+        if (typeof field === 'string') return field.replace(/[{}"]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+        return [];
+      };
+      const { data: rawData, error: dbError } = await supabase
+        .from('doctor_applications')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (dbError) {
+        console.error('Error fetching doctor:', dbError.message);
+        setError('Failed to load doctor details.');
+        setDoctor(null);
+      } else {
+        console.log('Fetched doctor data:', rawData);
+        const data = {
+          ...rawData,
+          location: parseArrayField(rawData.location || params.location),
+          work_schedule: parseArrayField(rawData.work_schedule),
+          // Explicitly convert to numbers to ensure math works
+          consultation_fee_online: Number(rawData.consultation_fee_online || 0),
+          consultation_fee_offline: Number(rawData.consultation_fee_offline || 0),
+        };
+        setDoctor(data as Doctor);
+        setError(null);
+      }
+      setLoading(false);
+    };
+
+    fetchDoctor();
+
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+
+    const channel = supabase
+      .channel(`doctor-details-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_applications', filter: `id=eq.${id}` }, fetchDoctor)
+      .subscribe();
+
+    return () => {
+      navigation.getParent()?.setOptions({ tabBarStyle: undefined });
+      supabase.removeChannel(channel);
+    };
+  }, [id, navigation, params.location]);
+
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+
+  const availabilityMap = useMemo(() => {
+    if (!doctor?.availability) return {};
+    return doctor.availability.reduce((acc, curr) => {
+      if (curr.date && curr.times) {
+        acc[curr.date] = curr.times;
+      }
+      return acc;
+    }, {} as Record<string, string[]>);
+  }, [doctor?.availability]);
+
+  const markedDates = useMemo(() => {
+    const marks = Object.keys(availabilityMap).reduce(
+      (acc, date) => {
+        acc[date] = { marked: true, dotColor: '#4CAF50' };
+        return acc;
+      },
+      // Provide a type for the accumulator to avoid the implicit 'any' error.
+      {} as Record<string, { marked?: boolean; dotColor?: string; selected?: boolean; selectedColor?: string; }>
+    );
+
+    if (selectedDate) {
+      marks[selectedDate] = { ...marks[selectedDate], selected: true, selectedColor: '#4CAF50' };
+    }
+    return marks;
+  }, [availabilityMap, selectedDate]);
+
+  const selectedAvailability = useMemo(() => {
+    if (!selectedDate || !doctor?.availability) return null;
+    return doctor.availability.find(a => a.date === selectedDate);
+  }, [selectedDate, doctor?.availability]);
+
+  const handleBook = async (type: 'online' | 'in-office') => {
+    if (selectedDate && selectedTime && doctor) {
+      setBookingType(type);
+      setIsBookingModalVisible(true);
+      setPinCode('');
+      
+      setIsBalanceLoading(true);
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) {
+          showToast(t["please log in to book"]);
+          router.push('/auth');
+          setIsBookingModalVisible(false);
+          return;
+        }
+        const res = await fetch(`${API_BASE_URL}/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setWalletBalance(Number(data.wallet_balance) || 0);
+          setCurrentUserId(data.id || data._id || data.user_id); // Store user ID from backend
+        } else {
+          showToast("Could not fetch wallet balance.");
+        }
+      } catch (error) {
+        console.error("Failed to fetch wallet balance:", error);
+      } finally {
+        setIsBalanceLoading(false);
+      }
+    }
+  };
+
+  const getFee = (slotFee: any, globalFee: any) => {
+    if (slotFee !== undefined && slotFee !== null && slotFee !== "") {
+      return Number(slotFee);
+    }
+    return Number(globalFee || 0);
+  };
+
+  const handleConfirmBookingPayment = async () => {
+    // Use specific fee from availability if present, otherwise fallback to global doctor fee
+    const feeOnline = getFee(selectedAvailability?.consultation_fee_online, doctor?.consultation_fee_online);
+    const feeOffline = getFee(selectedAvailability?.consultation_fee_offline, doctor?.consultation_fee_offline);
+    
+    const bookingFee = bookingType === 'online' ? feeOnline : feeOffline;
+    console.log('Starting booking payment. Fee:', bookingFee, 'Balance:', walletBalance);
+
+    if (walletBalance === null || walletBalance < bookingFee) {
+      showToast(t["insufficient wallet balance"]);
+      return;
+    }
+    if (!pinCode) {
+      showToast(t["enter pin message"]);
+      return;
+    }
+
+    setIsPaying(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        showToast(t["authentication error"] || "Authentication error.");
+        return;
+      }
+
+      // 0. Check for duplicate booking
+      const { data: { user } } = await supabase.auth.getUser();
+      const userIdToUse = user?.id || currentUserId;
+
+      if (userIdToUse) {
+        const { data: existingBookings, error: checkError } = await supabase
+          .from('bookings')
+          .select('id')
+          .eq('user_id', userIdToUse)
+          .eq('doctor_id', doctor?.id)
+          .eq('date', selectedDate)
+          .eq('time', selectedTime)
+          .neq('status', 'cancelled')
+          .limit(1);
+
+        if (checkError) {
+          showToast(t["failed to check existing bookings"]);
+          return;
+        }
+        if (existingBookings && existingBookings.length > 0) {
+          showToast(t["duplicate booking message"]);
+          return;
+        }
+      }
+
+      // 1. Verify PIN
+      console.log('Verifying PIN...');
+      const verifyRes = await fetch(`${API_BASE_URL}/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pin_code: pinCode }),
+      });
+      if (!verifyRes.ok) {
+        const errData = await verifyRes.json();
+        showToast(errData.error || t["incorrect pin"]);
+        return;
+      }
+
+      // 2. Deduct Wallet
+      if (bookingFee > 0) {
+        console.log('Deducting wallet...');
+        const deductRes = await fetch(`${API_BASE_URL}/wallet/deduct`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ amount: bookingFee, reason: `Booking Dr. ${doctor?.name}`, pin: pinCode }),
+        });
+        if (!deductRes.ok) {
+          const errData = await deductRes.json();
+          console.error('Wallet deduction failed:', errData);
+          showToast(errData.error || "Payment failed.");
+          return;
+        }
+      } else {
+        console.log('Booking is free, skipping wallet deduction.');
+      }
+
+      // 3. Insert Booking into Supabase
+      console.log('Inserting booking into Supabase...');
+
+      const { error } = await supabase.from('bookings').insert({
+        user_id: userIdToUse,
+        doctor_id: doctor?.id,
+        doctor_name: doctor?.name,
+        date: selectedDate,
+        time: selectedTime,
+        type: bookingType,
+        amount: bookingFee,
+        status: 'pending',
+      });
+
+      if (error) {
+        console.error('Supabase insert error:', error);
+        showToast(error.message || "An error occurred.");
+        return;
+      }
+
+      setPaymentSuccess(true);
+      setTimeout(() => {
+        setIsBookingModalVisible(false);
+        setPaymentSuccess(false);
+        router.push('/appointments');
+      }, 4000);
+    } catch (error: any) {   
+      Alert.alert(t["appointment booking failed"], error.message || "An error occurred.");
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  // Strict availability checks to ensure we don't fall back to defaults when a date is selected
+  const isOnlineAvailable = useMemo(() => {
+    console.log('[DoctorDetail] Recalculating isOnlineAvailable. Global Toggle:', showBookOnlineButton, 'Selected Date:', selectedDate, 'Doctor Booking Type:', doctor?.booking_type);
+    if (selectedDate) {
+      // If date selected, strictly use slot configuration
+      if (!selectedAvailability) return false;
+      const type = selectedAvailability.booking_type;
+      const result = (!type || type === 'online' || type === 'both') && showBookOnlineButton;
+      console.log('[DoctorDetail] isOnlineAvailable (with selectedDate):', result);
+      return result;
+    }
+    // No date selected, use global defaults
+    const result = (doctor?.booking_type === 'online' || doctor?.booking_type === 'both') && showBookOnlineButton;
+    console.log('[DoctorDetail] isOnlineAvailable (no selectedDate):', result);
+    return result;
+  }, [selectedDate, selectedAvailability, doctor]);
+
+  const isInOfficeAvailable = useMemo(() => {
+    console.log('[DoctorDetail] Recalculating isInOfficeAvailable. Global Toggle:', showBookInOfficeButton, 'Selected Date:', selectedDate, 'Doctor Booking Type:', doctor?.booking_type);
+    if (selectedDate) {
+      if (!selectedAvailability) return false;
+      const type = selectedAvailability.booking_type;
+      const result = (type === 'in-office' || type === 'both') && showBookInOfficeButton;
+      console.log('[DoctorDetail] isInOfficeAvailable (with selectedDate):', result);
+      return result;
+    }
+    const result = (doctor?.booking_type === 'in-office' || doctor?.booking_type === 'both') && showBookInOfficeButton;
+    console.log('[DoctorDetail] isInOfficeAvailable (no selectedDate):', result);
+    return result;
+  }, [selectedDate, selectedAvailability, doctor]);
+
+  if (loading || (error && !doctor)) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top, paddingBottom: 10 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Icon name="arrow-back" size={24} color="#212121" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{t["doctor profile"]}</Text>
+          <View style={styles.headerRightPlaceholder} />
+        </View>
+        <DoctorDetailSkeleton />
+      </View>
+    );
+  }
+
+  if (!doctor) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ textAlign: 'center', marginTop: 50 }}>{t["doctor not found"]}</Text>
+      </View>
+    );
+  }
+
+  return (
+
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top, paddingBottom: 10 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Icon name="arrow-back" size={24} color="#212121" />
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>{t["doctor profile"]}</Text>
+
+        <View style={styles.headerRightPlaceholder} />
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {doctor.image ? (
+          <Image
+            source={{ 
+              uri: doctor.image && !doctor.image.startsWith('http') 
+                ? `${DOCTOR_URL_PREFIX}${doctor.image}` 
+                : doctor.image 
+            }}
+            style={styles.doctorImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.placeholderImage}>
+            <Text style={styles.placeholderText}>{t["no image available"]}</Text>
+          </View>
+        )}
+
+        <View style={styles.detailsContainer}>
+          <View style={styles.section}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <Icon name="person" size={22} color="green" style={{ marginRight: 8, marginBottom: 6 }} />
+                  <Text style={styles.doctorName}>{doctor.name}</Text>
+                </View>
+                <View style={styles.infoBlock}>
+                  <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>
+                  {doctor.location && doctor.location.length > 0 ? (
+                    doctor.location.map((loc, index) => (
+                      <View key={index} style={{ marginBottom: 6 }}>
+                        {typeof loc === 'string' ? (
+                          <Text style={styles.doctorLocation}>• {loc}</Text>
+                        ) : (
+                          <View style={styles.locationCard}>
+                            {loc.latitude && loc.longitude && !isNaN(Number(loc.latitude)) && !isNaN(Number(loc.longitude)) && (
+                              <View style={styles.mapContainer}>
+                                <MapView
+                                  style={styles.map}
+                                  initialRegion={{
+                                    latitude: Number(loc.latitude),
+                                    longitude: Number(loc.longitude),
+                                    latitudeDelta: 0.01,
+                                    longitudeDelta: 0.01,
+                                  }}
+                                >
+                                  <Marker
+                                    coordinate={{ latitude: Number(loc.latitude), longitude: Number(loc.longitude) }}
+                                    title={loc.type || 'Location'}
+                                    description={loc.address}
+                                  />
+                                </MapView>
+                              </View>
+                            )}
+                            <Text style={styles.locationType}>{loc.type || 'Location'} {loc.city ? `- ${loc.city}` : ''}</Text>
+                            <Text style={styles.locationAddress}>{loc.address}</Text>
+                            {loc.latitude && loc.longitude && !isNaN(Number(loc.latitude)) && !isNaN(Number(loc.longitude)) && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  Alert.alert(
+                                    "Leave App",
+                                    "You are about to leave the app to open Google Maps. Do you want to continue?",
+                                    [
+                                      { text: "No", style: "cancel" },
+                                      { text: "Yes", onPress: () => {
+                                        const url = Platform.select({
+                                          ios: `https://www.google.com/maps/search/?api=1&query=${loc.latitude},${loc.longitude}`,
+                                          android: `geo:${loc.latitude},${loc.longitude}?q=${loc.latitude},${loc.longitude}`
+                                        });
+                                        if (url) Linking.openURL(url);
+                                      }}
+                                    ]
+                                  );
+                                }}
+                                style={styles.mapButton}
+                              >
+                                <Text style={styles.mapButtonText}>Open in Google Maps</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.doctorLocation}>No locations specified.</Text>
+                  )}
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 4 }}>
+                  <Icon name="info" size={20} color="green" style={{ marginRight: 8, marginBottom: 6 }} />
+                  <Text style={styles.bioTitle}>{t.about}</Text>
+                </View>
+                <Text style={styles.bio}>
+                  {doctor.bio || `Dr. ${doctor.name} is a dedicated ${doctor.specialty?.toLowerCase()} professional.`}
+                </Text>
+
+                {doctor.work_schedule && doctor.work_schedule.length > 0 && (
+                  <View style={{ marginTop: 8, marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <Icon name="schedule" size={20} color="green" style={{ marginRight: 8 }} />
+                      <Text style={styles.bioTitle}>{t["working hours"]}</Text>
+                    </View>
+                    <View style={styles.scheduleCard}>
+                      {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day, index) => {
+                        const item = doctor.work_schedule?.find((s: any) => s.day === day);
+                        const isToday = day === currentDayName;
+                        return (
+                        <View key={index} style={[
+                          styles.scheduleRow,
+                          index !== 6 && styles.scheduleRowBorder,
+                          isToday && styles.scheduleRowToday
+                        ]}>
+                          <Text style={[styles.scheduleDay, isToday && styles.scheduleTextToday]}>{day}</Text>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            {item ? (
+                              <>
+                                <Text style={[styles.scheduleTime, isToday && styles.scheduleTextToday]}>{item.start_time} - {item.end_time}</Text>
+                                {item.break_start_time && item.break_end_time && (
+                                  <Text style={[styles.breakTime, isToday && styles.scheduleTextToday]}>Break: {item.break_start_time} - {item.break_end_time}</Text>
+                                )}
+                              </>
+                            ) : (
+                              <Text style={[styles.scheduleTime, { color: '#E53935', fontStyle: 'italic' }, isToday && styles.scheduleTextToday]}>{t.closed}</Text>
+                            )}
+                          </View>
+                        </View>
+                      )})}
+                    </View>
+                  </View>
+                )}
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}>
+                  <Icon name="event-available" size={20} color="green" style={{ marginRight: 8 }} />
+                  <Text style={styles.sectionTitle}>{t["availability & booking"]}</Text>
+                </View>
+                 <Calendar
+                   style={styles.calendar}
+                   markedDates={markedDates}
+                   onDayPress={(day) => {
+                     setSelectedDate(day.dateString);
+                     setSelectedTime(null);
+                   }}
+                   theme={{
+                     calendarBackground: '#fff',
+                     textSectionTitleColor: '#212121',
+                     selectedDayBackgroundColor: '#4CAF50',
+                     selectedDayTextColor: '#fff',
+                     todayTextColor: '#0288D1',
+                     dayTextColor: '#212121',
+                     textDisabledColor: '#B0BEC5',
+                     dotColor: '#4CAF50',
+                     selectedDotColor: '#fff',
+                     arrowColor: '#4CAF50',
+                     monthTextColor: '#212121',
+                     textDayFontFamily: 'Roboto-Regular',
+                     textMonthFontFamily: 'Roboto-Bold',
+                     textDayHeaderFontFamily: 'Roboto-Medium',
+                   }}
+                 />
+                 {selectedDate && availabilityMap[selectedDate] && (
+                   <View style={styles.timeSlotsContainer}>
+                     <Text style={styles.timeSlotsTitle}>{t["available times"]}</Text>
+                     <View style={styles.timeSlots}>
+                       {availabilityMap[selectedDate].map((time) => (
+                         <Pressable
+                           key={time}
+                           style={[
+                             styles.timeSlot,
+                             selectedTime === time && styles.selectedTimeSlot,
+                           ]}
+                           onPress={() => setSelectedTime(time)}
+                         >
+                           <Text
+                             style={[
+                               styles.timeSlotText,
+                               selectedTime === time && styles.selectedTimeSlotText,
+                             ]}
+                           >
+                             {time}
+                           </Text>
+                         </Pressable>
+                       ))}
+                     </View>
+                   </View>
+                 )}
+                 <View style={styles.buttonsContainer}>
+                   {isOnlineAvailable && (
+                     <Pressable
+                       style={({ pressed }) => [
+                         styles.button,
+                         !(selectedDate && selectedTime) && styles.disabledButton,
+                         pressed && selectedDate && selectedTime && styles.pressedButton,
+                       ]}
+                       onPress={() => handleBook('online')}
+                       disabled={!(selectedDate && selectedTime)}
+                     >
+                       <Text style={styles.buttonText}>{t["book online"]}</Text>
+                        
+                     </Pressable>
+                   )}
+                   {isInOfficeAvailable && (
+                     <Pressable
+
+                       style={({ pressed }) => [
+                         styles.button,
+                         !(selectedDate && selectedTime) && styles.disabledButton,
+                         pressed && selectedDate && selectedTime && styles.pressedButton,
+                       ]}
+                       onPress={() => handleBook('in-office')}
+                       disabled={!(selectedDate && selectedTime)}
+
+                     >
+                       <Text style={styles.buttonText}>{t["book in-office"]}</Text>
+                     </Pressable>
+                   )}
+                 </View>
+           </View>
+ 
+           {showCallCarButton && (
+           <Pressable
+             style={styles.carButton}
+             onPress={() => showToast('Dr. IR. Gahungu ariko arabikora.', 1000)}
+           >
+             <Text style={styles.carButtonText}>{t["call car"]}</Text> 
+           </Pressable>
+           )}
+         </View>
+       </ScrollView>
+       <Modal
+         visible={isBookingModalVisible}
+         transparent
+         animationType="slide"
+         onRequestClose={() => setIsBookingModalVisible(false)}
+       >
+         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+           <View style={styles.modalOverlay}>
+             <KeyboardAvoidingView
+               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+               style={{ width: '100%', alignItems: 'center', justifyContent: 'center', flex: 1 }}
+             >
+               <View style={styles.modalContent}>
+                 {paymentSuccess ? (
+                   <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                     <ConfettiCannon count={200} origin={{x: -10, y: 0}} fadeOut={true} />
+                     <Animated.View style={{ transform: [{ scale: checkmarkScale }] }}>
+                       <Icon name="check-circle" size={80} color="#4CAF50" />
+                     </Animated.View>
+                     <Text style={[styles.modalTitle, { marginTop: 20, marginBottom: 10 }]}>{t["payment successful"]}</Text>
+                     <Text style={styles.modalText}>{t["redirecting to appointments"]}</Text>
+                   </View>
+                 ) : (
+                   <>
+                 <TouchableOpacity style={styles.closeIcon} onPress={() => setIsBookingModalVisible(false)}>
+                   <Icon name="close" size={24} color="#212121" />
+                 </TouchableOpacity>
+                 
+                 <Text style={styles.modalTitle}>{t["confirm booking"]}</Text>
+                 
+                 <View style={{ width: '100%', marginBottom: 20, backgroundColor: '#F5F5F5', padding: 12, borderRadius: 8 }}>
+                   <Text style={styles.modalText}>{t.doctor}: <Text style={{ fontWeight: 'bold' }}>{doctor.name}</Text></Text>
+                   <Text style={styles.modalText}>{t.date}: <Text style={{ fontWeight: 'bold' }}>{selectedDate}</Text></Text>
+                   <Text style={styles.modalText}>{t.time}: <Text style={{ fontWeight: 'bold' }}>{selectedTime}</Text></Text>
+                   <Text style={styles.modalText}>{t.type}: <Text style={{ fontWeight: 'bold' }}>{bookingType === 'online' ? t.online : t["in-office"]}</Text></Text>
+                   <View style={{ height: 1, backgroundColor: '#ddd', marginVertical: 8 }} />
+                   <Text style={styles.modalText}>{t["consultation fee"]}: <Text style={{ fontWeight: 'bold', color: '#4CAF50' }}>
+                     {bookingType === 'online' 
+                        ? getFee(selectedAvailability?.consultation_fee_online, doctor.consultation_fee_online)
+                        : getFee(selectedAvailability?.consultation_fee_offline, doctor.consultation_fee_offline)
+                     } {getCurrency(country)}
+                   </Text></Text>
+                 </View>
+
+                 <View style={{ alignItems: 'center', width: '100%' }}>
+                     <TextInput
+                       style={styles.pinCodeInput}
+                       placeholder="****"
+                       placeholderTextColor="#ccc"
+                       keyboardType="number-pad"
+                       secureTextEntry={true}
+                       value={pinCode}
+                       onChangeText={setPinCode}
+                       maxLength={4}
+                     />
+
+                     <TouchableOpacity
+                       style={[styles.bookingActionButton, (isPaying || (walletBalance !== null && walletBalance < (bookingType === 'online' 
+                          ? getFee(selectedAvailability?.consultation_fee_online, doctor.consultation_fee_online)
+                          : getFee(selectedAvailability?.consultation_fee_offline, doctor.consultation_fee_offline)
+                        )) || !pinCode) && styles.disabledButton]}
+                       onPress={handleConfirmBookingPayment} 
+                       disabled={isPaying || (walletBalance !== null && walletBalance < (bookingType === 'online' 
+                          ? getFee(selectedAvailability?.consultation_fee_online, doctor.consultation_fee_online)
+                          : getFee(selectedAvailability?.consultation_fee_offline, doctor.consultation_fee_offline)
+                        )) || !pinCode}
+                     >
+                       {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={styles.bookingActionButtonText}>{t["pay and book"]}</Text>} 
+                     </TouchableOpacity>
+                 </View>
+                   </>
+                 )}
+               </View>
+             </KeyboardAvoidingView>
+           </View>
+         </TouchableWithoutFeedback>
+       </Modal>
+       {showConfetti && (
+        <ConfettiCannon
+          count={200}
+          origin={{ x: Dimensions.get('window').width / 2, y: 0 }}
+          onAnimationEnd={() => setShowConfetti(false)}
+        />
+      )}
+      <Toast />
+    </View>
+  );
+}
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#E0F7FA',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#E0F7FA',
+    paddingHorizontal: 16,
+    zIndex: 1,
+  },
+
+backButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontFamily: 'Roboto-Bold',
+    color: '#212121',
+    textAlign: 'center',
+  },
+
+   headerRightPlaceholder: {
+    width: 40, // Same width as backButton for balance
+  },
+  
+  scrollContent: {
+    paddingBottom: 16,
+  },
+  doctorImage: {
+    width: '95%',
+    alignSelf: 'center',
+    height: 250,
+    borderRadius: 20,
+    marginVertical: 16,
+  },
+  placeholderImage: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: '#666',
+    fontFamily: 'Roboto-Regular',
+  },
+  skeletonImage: {
+    width: '95%',
+    alignSelf: 'center',
+    height: 250,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 20,
+    marginVertical: 16,
+  },
+  skeletonLine: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 4,
+  },
+  detailsContainer: {
+    backgroundColor: 'white',
+    padding: 16,
+    marginTop: 8,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 50,
+  },
+  doctorName: {
+    fontSize: 20,
+    fontFamily: 'Roboto-Bold',
+    color: '#212121',
+    marginBottom: 8,
+  },
+  infoBlock: {
+    marginLeft: 30,
+  },
+  doctorSpecialty: {
+    fontSize: 16,
+    fontFamily: 'Roboto-Medium',
+    color: '#4CAF50',
+    marginBottom: 4,
+  },
+  doctorLocation: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    color: '#757575',
+    marginBottom: 4,
+  },
+  bioTitle: {
+    fontSize: 18,
+    fontFamily: 'Roboto-Bold',
+    color: '#212121',
+    marginBottom: 8,
+  },
+  bio: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 16,
+    marginLeft: 30,
+  },
+  section: {
+    marginTop: 12,
+  },
+  lockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 12,
+    color: '#212121',
+  },
+  calendar: {
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  timeSlotsContainer: {
+    marginBottom: 16,
+  },
+  timeSlotsTitle: {
+    fontSize: 16,
+    fontFamily: 'Roboto-Medium',
+    color: '#212121',
+    marginBottom: 8,
+  },
+  timeSlots: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  timeSlot: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
+  },
+  selectedTimeSlot: {
+    backgroundColor: '#4CAF50',
+    borderColor: 'green',
+  },
+  timeSlotText: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    color: '#212121',
+  },
+  selectedTimeSlotText: {
+    color: '#fff',
+  },
+  buttonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  button: {
+    flex: 1,
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderColor: 'green',
+  },
+  disabledButton: {
+    backgroundColor: '#B0BEC5',
+  },
+  pressedButton: {
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
+  },
+  buttonText: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Medium',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  carButton: {
+    marginTop: 16,
+    flex: 1,
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderColor: 'green'
+  },
+  carButtonText: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Medium',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  closeIcon: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 10,
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 16,
+    color: '#212121',
+    marginTop: 8,
+  },
+  modalText: {
+    fontSize: 16,
+    fontFamily: 'Roboto-Regular',
+    textAlign: 'center',
+    marginBottom: 8,
+    color: '#424242',
+  },
+  balanceText: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Medium',
+    color: '#616161',
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modalButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 10,
+    borderRadius: 20,
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#eeeeee',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontFamily: 'Roboto-Medium',
+    color: '#fff',
+  },
+  pinCodeInput: {
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginBottom: 16,
+    width: '80%',
+    textAlign: 'center',
+    letterSpacing: 2,
+  },
+  bookingActionButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 14,
+    borderRadius: 25,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  bookingActionButtonText: {
+    fontSize: 18,
+    fontFamily: 'Roboto-Bold',
+    color: '#fff',
+  },
+  locationCard: {
+    backgroundColor: '#f9f9f9',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  locationType: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Bold',
+    color: '#212121',
+  },
+  locationAddress: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    color: '#555',
+  },
+  locationPhone: {
+    fontSize: 13,
+    fontFamily: 'Roboto-Regular',
+    color: '#388E3C',
+    marginTop: 2,
+  },
+  mapContainer: {
+    height: 150,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+  scheduleCard: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    marginLeft: 30,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  scheduleRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  scheduleDay: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Medium',
+    color: '#212121',
+  },
+  scheduleTime: {
+    fontSize: 14,
+    fontFamily: 'Roboto-Regular',
+    color: '#555',
+  },
+  breakTime: {
+    fontSize: 12,
+    fontFamily: 'Roboto-Regular',
+    color: '#E65100',
+    marginTop: 2,
+  },
+  scheduleRowToday: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    marginHorizontal: -6,
+  },
+  scheduleTextToday: {
+    color: '#2E7D32',
+    fontFamily: 'Roboto-Bold',
+  },
+  mapButton: {
+    marginTop: 8,
+    backgroundColor: '#1E88E5',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  mapButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontFamily: 'Roboto-Medium',
+  },
+});
