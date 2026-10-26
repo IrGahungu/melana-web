@@ -138,16 +138,17 @@ export default function FeaturedHospitals({ title, baseUrl = "" }: Props) {
     const fetchHospitals = async () => {
       console.log('[FeaturedHospitals] Fetching... | Country Filter:', country);
       setLoading(true);
-      
+
       let query = supabase
         .from('hospital_applications')
         .select('id, name, image, status, country')
-        
+        .eq('status', 'approved')
+
         .order('created_at', { ascending: false })
         .limit(4);
 
       if (country) {
-        query = query.eq('country', country);
+        query = query.ilike('country', country.trim());
       }
 
       const { data, error } = await query;
@@ -170,6 +171,17 @@ export default function FeaturedHospitals({ title, baseUrl = "" }: Props) {
     };
 
     fetchHospitals();
+
+    const channel = supabase
+      .channel('featured-hospitals-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hospital_applications' }, () => {
+        fetchHospitals();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [country]);
 
   const renderItem = ({ item }: { item: FeaturedHospital }) => (
@@ -213,8 +225,8 @@ export default function FeaturedHospitals({ title, baseUrl = "" }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    paddingVertical: 16 ,
+  container: {
+    paddingVertical: 16,
   },
   header: {
     fontSize: 16,
@@ -223,8 +235,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
   },
-  list: { 
-    paddingHorizontal: 16 
+  list: {
+    paddingHorizontal: 16
   },
   card: {
     backgroundColor: 'white',
@@ -247,21 +259,21 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 12,
     overflow: 'hidden',
   },
-  image: { 
-    width: '100%', 
-    height: 120, 
-    borderTopLeftRadius: 12, 
-    borderTopRightRadius: 12 
+  image: {
+    width: '100%',
+    height: 120,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 12,
   },
-  details: { 
-    padding: 12 
+  details: {
+    padding: 12
   },
   title: {
     fontFamily: 'Roboto-Bold',
@@ -291,6 +303,8 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 12,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   skeletonText: {
     height: 16,

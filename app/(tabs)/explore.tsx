@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, FlatList, TouchableOpacity, Dimensions, TouchableWithoutFeedback, Animated, Modal, Share, BackHandler, Alert, Linking, PanResponder, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Heart, MessageCircle, Send, MoreHorizontal, X, Plus, Check, Play, Pause, ChevronRight, Wallet, Globe, Instagram, Twitter, Bell } from 'lucide-react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -67,9 +67,32 @@ const SkeletonPost = () => (
   </SkeletonPulse>
 );
 
-const PostImageItem = ({ uri, isVisible, onDoubleTap }: { uri: string, isVisible: boolean, onDoubleTap: () => void }) => {
+const PostImageItem = ({
+  uri,
+  isVisible,
+  onDoubleTap,
+}: {
+  uri: string;
+  isVisible: boolean;
+  onDoubleTap: () => void;
+}) => {
   const [loading, setLoading] = useState(true);
   const isMediaVideo = isVideo(uri);
+
+  const player = useVideoPlayer(isMediaVideo ? uri : null, (player) => {
+    player.loop = true;
+    player.muted = true;
+  });
+
+  useEffect(() => {
+    if (!isMediaVideo || !player) return;
+
+    if (isVisible) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isVisible, isMediaVideo, player]);
 
   return (
     <TouchableWithoutFeedback onPress={onDoubleTap}>
@@ -81,22 +104,19 @@ const PostImageItem = ({ uri, isVisible, onDoubleTap }: { uri: string, isVisible
             </SkeletonPulse>
           </View>
         )}
+
         {isMediaVideo ? (
-          <Video
-            source={{ uri }}
+          <VideoView
+            player={player}
             style={styles.postImage}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={isVisible}
-            isLooping
-            isMuted
-            onLoadStart={() => setLoading(true)}
-            onLoad={() => setLoading(false)}
-            useNativeControls={false}
+            contentFit="cover"
+            nativeControls={false}
+            onFirstFrameRender={() => setLoading(false)}
           />
         ) : (
-          <Image 
-            source={{ uri }} 
-            style={styles.postImage} 
+          <Image
+            source={{ uri }}
+            style={styles.postImage}
             resizeMode="cover"
             onLoadStart={() => setLoading(true)}
             onLoadEnd={() => setLoading(false)}
@@ -107,8 +127,8 @@ const PostImageItem = ({ uri, isVisible, onDoubleTap }: { uri: string, isVisible
   );
 };
 
-const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onNextImage, onViewComments, refreshCommentsTrigger, userUsername }: { 
-  item: any, 
+const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onNextImage, onViewComments, refreshCommentsTrigger, userUsername }: {
+  item: any,
   isLiked: boolean,
   initialViewedIndices: Record<number, boolean>,
   onViewComments: (post: any, comments: any[]) => void,
@@ -153,18 +173,18 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
   useEffect(() => {
     fetchComments();
   }, [item.id, refreshCommentsTrigger]);
-  
+
   // Real-time subscription for comments on the main feed (updates count and preview)
   useEffect(() => {
     const channel = supabase
       .channel(`post-feed-comments-${item.id}`)
       .on(
         'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'post_comments', 
-          filter: `post_id=eq.${item.id}` 
+        {
+          event: '*',
+          schema: 'public',
+          table: 'post_comments',
+          filter: `post_id=eq.${item.id}`
         },
         () => fetchComments()
       )
@@ -249,8 +269,8 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
       const currentImage = item.images[currentImageIndex];
       await Share.share({
         message: `Check out this post from ${item.title}: ${item.caption}\n\n${currentImage}`,
-        url: currentImage, 
-        title: `Post by ${item.title}`, 
+        url: currentImage,
+        title: `Post by ${item.title}`,
       });
     } catch (error) {
       console.error('Error sharing:', error);
@@ -261,7 +281,7 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
     if (!inlineComment.trim()) return;
     if (!userUsername) {
       // Trigger the username creation prompt handled in the parent ExploreScreen
-      onViewComments(item, comments); 
+      onViewComments(item, comments);
       return;
     }
 
@@ -271,10 +291,10 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
       const response = await fetch(`${API_BASE_URL}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ 
-          post_id: item.id, 
-          comment_text: inlineComment, 
-          user_username: userUsername 
+        body: JSON.stringify({
+          post_id: item.id,
+          comment_text: inlineComment,
+          user_username: userUsername
         })
       });
       if (response.ok) {
@@ -363,10 +383,10 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
           }}
           keyExtractor={(_, index) => index.toString()}
           renderItem={({ item: uri, index }) => (
-            <PostImageItem 
-              uri={uri} 
-              isVisible={index === currentImageIndex} 
-              onDoubleTap={handleDoubleTap} 
+            <PostImageItem
+              uri={uri}
+              isVisible={index === currentImageIndex}
+              onDoubleTap={handleDoubleTap}
             />
           )}
           style={styles.postFlatList}
@@ -395,26 +415,26 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
           </View>
         ) : null}
 
-          {/* Multi-heart burst animation */}
-          <View style={styles.heartOverlay}>
-            {heartAnimations.map((anim, i) => {
-              const angle = (i / 6) * 2 * Math.PI;
-              const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * 100] });
-              const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * 100 - 50] });
-              const opacity = anim.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0, 1, 0] });
-              const scale = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 1.5, 1] });
+        {/* Multi-heart burst animation */}
+        <View style={styles.heartOverlay}>
+          {heartAnimations.map((anim, i) => {
+            const angle = (i / 6) * 2 * Math.PI;
+            const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * 100] });
+            const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * 100 - 50] });
+            const opacity = anim.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0, 1, 0] });
+            const scale = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 1.5, 1] });
 
-              return (
-                <Animated.View
-                  key={i}
-                  style={[styles.miniHeart, { opacity, transform: [{ translateX }, { translateY }, { scale }] }]}
-                >
-                  <Heart size={30} color="#E1306C" fill="#E1306C" />
-                </Animated.View>
-              );
-            })}
-          </View>
+            return (
+              <Animated.View
+                key={i}
+                style={[styles.miniHeart, { opacity, transform: [{ translateX }, { translateY }, { scale }] }]}
+              >
+                <Heart size={30} color="#E1306C" fill="#E1306C" />
+              </Animated.View>
+            );
+          })}
         </View>
+      </View>
       <View style={styles.postActions}>
         <View style={styles.postActionsLeft}>
           <TouchableOpacity style={styles.actionIcon} onPress={toggleLike}>
@@ -423,9 +443,9 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
           <TouchableOpacity style={styles.actionIcon} onPress={handleShare}>
             <Send size={24} color="#333" />
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.commentBarContainer} 
+
+          <TouchableOpacity
+            style={styles.commentBarContainer}
             onPress={() => onViewComments(item, comments)}
             activeOpacity={0.7}
           >
@@ -459,15 +479,15 @@ const Post = ({ item, isLiked: initialIsLiked, initialViewedIndices, onLike, onN
                   <Text style={styles.shortCommentText}>
                     <Text style={styles.commentUser}>{c.user_username}</Text>{' '}
                     {displayText.split(/(@\w+)/g).map((part: string, i: number) => (
-                      <Text 
-                        key={i} 
+                      <Text
+                        key={i}
                         style={part.startsWith('@') ? { color: '#2874F0', fontWeight: 'bold' } : null}
                       >
                         {part}
                       </Text>
                     ))}
                     {shouldTruncate && (
-                      <Text style={styles.readMoreText} onPress={() => setExpandedComments(prev => ({...prev, [c.id]: true}))}> read more</Text>
+                      <Text style={styles.readMoreText} onPress={() => setExpandedComments(prev => ({ ...prev, [c.id]: true }))}> read more</Text>
                     )}
                   </Text>
                 </View>
@@ -518,7 +538,7 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
         if (targetComment.parent_id) {
           setExpandedThreads(prev => new Set(prev).add(targetComment.parent_id!));
         }
-        
+
         // 2. Scroll to index after layout expansion
         setTimeout(() => {
           const index = visibleComments.findIndex(c => c.id === highlightCommentId);
@@ -536,7 +556,7 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
     if (targetComment) {
       setReplyTargetId(targetComment.parent_id || targetComment.id);
     }
-    
+
     setNewComment(`@${targetUsername} `);
     inputRef.current?.focus();
   };
@@ -546,14 +566,18 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
       t["options"] || "Options",
       "",
       [
-        { text: t["edit"] || "Edit", onPress: () => {
-          setEditingCommentId(comment.id);
-          setNewComment(comment.comment_text);
-          inputRef.current?.focus();
-        }},
-        { text: t["delete"] || "Delete", style: 'destructive', onPress: () => {
-          onDelete(comment.id);
-        }},
+        {
+          text: t["edit"] || "Edit", onPress: () => {
+            setEditingCommentId(comment.id);
+            setNewComment(comment.comment_text);
+            inputRef.current?.focus();
+          }
+        },
+        {
+          text: t["delete"] || "Delete", style: 'destructive', onPress: () => {
+            onDelete(comment.id);
+          }
+        },
         { text: t.cancel, style: 'cancel' }
       ]
     );
@@ -592,11 +616,11 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
       },
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
-          pan.y.setValue(gestureState.dy); 
+          pan.y.setValue(gestureState.dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > 80) { 
+        if (gestureState.dy > 80) {
           // Animate the sheet off-screen and close it
           Animated.timing(pan, {
             toValue: { x: 0, y: 600 },
@@ -651,10 +675,10 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
   const renderStyledInput = (text: string) => {
     const parts = text.split(/(@\w+)/g);
     return parts.map((part, i) => (
-      <Text 
-        key={i} 
-        style={part.startsWith('@') 
-          ? { color: '#2874F0', fontWeight: 'bold' } 
+      <Text
+        key={i}
+        style={part.startsWith('@')
+          ? { color: '#2874F0', fontWeight: 'bold' }
           : { color: '#212121' }
         }
       >
@@ -676,18 +700,18 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
       onRequestClose={onClose}
     >
       <View style={styles.bottomSheetOverlay}>
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={{ width: '100%', justifyContent: 'flex-end' }}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
-        <Animated.View 
-          style={[
-            styles.bottomSheetContent, 
-            { transform: [{ translateY: pan.y }] }
-          ]}
-        >
-            <View 
+          <Animated.View
+            style={[
+              styles.bottomSheetContent,
+              { transform: [{ translateY: pan.y }] }
+            ]}
+          >
+            <View
               style={styles.bottomSheetHeader}
               {...panResponder.panHandlers}
             >
@@ -700,119 +724,119 @@ const ViewAllCommentsModal: React.FC<ViewAllCommentsModalProps> = ({ isVisible, 
               </View>
               <Text style={styles.bottomSheetSubtitle} numberOfLines={1}>{postTitle}</Text>
             </View>
-          
-          <FlatList
-            ref={flatListRef}
-            style={{ flex: 1 }}
-            data={visibleComments}
-            keyExtractor={(item) => item.id.toString()}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => {
-              const isReply = !!item.parent_id || item.comment_text.trim().startsWith('@');
-              const hasReplies = !item.parent_id && comments.some(c => c.parent_id === item.id);
-              const isExpanded = expandedThreads.has(item.id);
-              const replyCount = comments.filter(c => c.parent_id === item.id).length;
-              const isHighlighted = item.id === highlightCommentId;
 
-              return (
-              <View style={[
-                styles.fullCommentItem,
-                isReply && styles.replyCommentItem,
-                isHighlighted && { backgroundColor: '#FFF9C4', borderLeftColor: '#FBC02D', borderLeftWidth: 4 }
-              ]}>
-                <View style={styles.fullCommentHeader}>
-                  <View style={styles.fullCommentUserRow}>
-                    <View style={styles.commentAvatarPlaceholder}>
-                      <Text style={styles.avatarInitial}>{item.user_username.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.fullCommentUser}>{item.user_username}</Text>
-                  </View>
-                  <Text style={styles.fullCommentDate}>
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </Text>
-                  {item.user_id === currentUserId && (
-                    <TouchableOpacity onPress={() => handleMorePress(item)} style={styles.moreOptionsBtn}>
-                      <MoreHorizontal size={18} color="#757575" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-                <Text style={styles.fullCommentText}>
-                  {item.comment_text.split(/(@\w+)/g).map((part: string, i: number) => (
-                    <Text 
-                      key={i} 
-                      style={part.startsWith('@') ? { color: '#2874F0', fontWeight: 'bold' } : null}
-                    >
-                      {part}
-                    </Text>
-                  ))}
-                </Text>
-                
-                <View style={styles.commentActionsRow}>
-                  <TouchableOpacity onPress={() => handleReply(item.user_username)} style={styles.replyButton}>
-                    <Text style={styles.replyButtonText}>{t["reply"] || "Reply"}</Text>
-                  </TouchableOpacity>
+            <FlatList
+              ref={flatListRef}
+              style={{ flex: 1 }}
+              data={visibleComments}
+              keyExtractor={(item) => item.id.toString()}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const isReply = !!item.parent_id || item.comment_text.trim().startsWith('@');
+                const hasReplies = !item.parent_id && comments.some(c => c.parent_id === item.id);
+                const isExpanded = expandedThreads.has(item.id);
+                const replyCount = comments.filter(c => c.parent_id === item.id).length;
+                const isHighlighted = item.id === highlightCommentId;
 
-                  {hasReplies && (
-                    <TouchableOpacity onPress={() => toggleThread(item.id)} style={styles.showMoreButton}>
-                      <Text style={styles.showMoreText}>
-                        {isExpanded ? (t["hide replies"] || "Hide replies") : `${t["show replies"] || "Show replies"} (${replyCount})`}
+                return (
+                  <View style={[
+                    styles.fullCommentItem,
+                    isReply && styles.replyCommentItem,
+                    isHighlighted && { backgroundColor: '#FFF9C4', borderLeftColor: '#FBC02D', borderLeftWidth: 4 }
+                  ]}>
+                    <View style={styles.fullCommentHeader}>
+                      <View style={styles.fullCommentUserRow}>
+                        <View style={styles.commentAvatarPlaceholder}>
+                          <Text style={styles.avatarInitial}>{item.user_username.charAt(0).toUpperCase()}</Text>
+                        </View>
+                        <Text style={styles.fullCommentUser}>{item.user_username}</Text>
+                      </View>
+                      <Text style={styles.fullCommentDate}>
+                        {new Date(item.created_at).toLocaleDateString()}
                       </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-              );
-            }}
-            ListEmptyComponent={() => (
-              <View style={styles.emptyCommentsContainer}>
-                <MessageCircle size={48} color="#E0E0E0" />
-                <Text style={styles.emptyCommentsText}>{t["no reviews yet"] || "No comments yet."}</Text>
-              </View>
-            )}
-            contentContainerStyle={{ paddingBottom: 60 }}
-            onScrollToIndexFailed={(info) => {
-              flatListRef.current?.scrollToOffset({
-                offset: info.averageItemLength * info.index,
-                animated: true,
-              });
-            }}
-          />
+                      {item.user_id === currentUserId && (
+                        <TouchableOpacity onPress={() => handleMorePress(item)} style={styles.moreOptionsBtn}>
+                          <MoreHorizontal size={18} color="#757575" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <Text style={styles.fullCommentText}>
+                      {item.comment_text.split(/(@\w+)/g).map((part: string, i: number) => (
+                        <Text
+                          key={i}
+                          style={part.startsWith('@') ? { color: '#2874F0', fontWeight: 'bold' } : null}
+                        >
+                          {part}
+                        </Text>
+                      ))}
+                    </Text>
 
-          <View style={styles.modalInputSection}>
-            {typingUsers.length > 0 && (
-              <Text style={styles.typingIndicatorText}>
-                {typingUsers.length === 1 
-                  ? `${typingUsers[0]} ${t["is typing..."] || "is typing..."}`
-                  : `${typingUsers.length} ${t["people are typing..."] || "people are typing..."}`}
-              </Text>
-            )}
-            {userUsername ? (
-              <View style={styles.modalInputWrapper}>
-                <TextInput
-                  ref={inputRef}
-                  style={styles.modalTextInput}
-                  placeholder={t["write your comment here..."]}
-                  onChangeText={setNewComment}
-                  multiline
-                  maxLength={200}
-                >
-                  {renderStyledInput(newComment)}
-                </TextInput>
-                <TouchableOpacity 
-                  style={[styles.modalPostBtn, !newComment.trim() && { opacity: 0.5 }]} 
-                  onPress={handleModalSubmit}
-                  disabled={isSubmitting || !newComment.trim()}
-                >
-                  {isSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Send size={18} color="#fff" />}
+                    <View style={styles.commentActionsRow}>
+                      <TouchableOpacity onPress={() => handleReply(item.user_username)} style={styles.replyButton}>
+                        <Text style={styles.replyButtonText}>{t["reply"] || "Reply"}</Text>
+                      </TouchableOpacity>
+
+                      {hasReplies && (
+                        <TouchableOpacity onPress={() => toggleThread(item.id)} style={styles.showMoreButton}>
+                          <Text style={styles.showMoreText}>
+                            {isExpanded ? (t["hide replies"] || "Hide replies") : `${t["show replies"] || "Show replies"} (${replyCount})`}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              }}
+              ListEmptyComponent={() => (
+                <View style={styles.emptyCommentsContainer}>
+                  <MessageCircle size={48} color="#E0E0E0" />
+                  <Text style={styles.emptyCommentsText}>{t["no reviews yet"] || "No comments yet."}</Text>
+                </View>
+              )}
+              contentContainerStyle={{ paddingBottom: 60 }}
+              onScrollToIndexFailed={(info) => {
+                flatListRef.current?.scrollToOffset({
+                  offset: info.averageItemLength * info.index,
+                  animated: true,
+                });
+              }}
+            />
+
+            <View style={styles.modalInputSection}>
+              {typingUsers.length > 0 && (
+                <Text style={styles.typingIndicatorText}>
+                  {typingUsers.length === 1
+                    ? `${typingUsers[0]} ${t["is typing..."] || "is typing..."}`
+                    : `${typingUsers.length} ${t["people are typing..."] || "people are typing..."}`}
+                </Text>
+              )}
+              {userUsername ? (
+                <View style={styles.modalInputWrapper}>
+                  <TextInput
+                    ref={inputRef}
+                    style={styles.modalTextInput}
+                    placeholder={t["write your comment here..."]}
+                    onChangeText={setNewComment}
+                    multiline
+                    maxLength={200}
+                  >
+                    {renderStyledInput(newComment)}
+                  </TextInput>
+                  <TouchableOpacity
+                    style={[styles.modalPostBtn, !newComment.trim() && { opacity: 0.5 }]}
+                    onPress={handleModalSubmit}
+                    disabled={isSubmitting || !newComment.trim()}
+                  >
+                    {isSubmitting ? <ActivityIndicator size="small" color="#fff" /> : <Send size={18} color="#fff" />}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.modalCreateUsernameBtn} onPress={() => { onClose(); router.push('/create-username'); }}>
+                  <Text style={styles.modalCreateUsernameText}>{t["create username"]}</Text>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.modalCreateUsernameBtn} onPress={() => { onClose(); router.push('/create-username'); }}>
-                <Text style={styles.modalCreateUsernameText}>{t["create username"]}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </Animated.View>
+              )}
+            </View>
+          </Animated.View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -839,6 +863,39 @@ export default function ExploreScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isMediaLoading, setIsMediaLoading] = useState(true);
+
+  // Story video player (expo-video)
+  // The player is created once and its source is replaced whenever the
+  // currently displayed story media changes. This keeps the hook at the
+  // component level and avoids calling hooks conditionally.
+  const currentStoryMedia =
+    selectedStory?.images?.[currentImageIndex] ?? null;
+
+  const storyPlayer = useVideoPlayer(null, (player) => {
+    player.loop = false;
+    player.muted = false;
+  });
+
+  useEffect(() => {
+    if (!selectedStory || !currentStoryMedia || !isVideo(currentStoryMedia)) {
+      storyPlayer.pause();
+      return;
+    }
+
+    setIsMediaLoading(true);
+    storyPlayer.replace(currentStoryMedia);
+
+    if (isPaused) {
+      storyPlayer.pause();
+    } else {
+      storyPlayer.play();
+    }
+
+    return () => {
+      storyPlayer.pause();
+    };
+  }, [selectedStory, currentStoryMedia, isPaused, storyPlayer]);
+
   const [canShowCheck, setCanShowCheck] = useState(false);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const isTimerActiveRef = useRef(isTimerActive);
@@ -851,7 +908,7 @@ export default function ExploreScreen() {
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
   const [viewedPostImages, setViewedPostImages] = useState<Record<string, boolean>>({});
   const [rewardText, setRewardText] = useState('');
-  
+
   const [config, setConfig] = useState({
     epPostLike: 200,
     epPostView: 300,
@@ -995,7 +1052,7 @@ export default function ExploreScreen() {
           if (interactionsRes.ok) {
             const { likedPostIds: serverLikes, viewedStories, viewedPosts } = await interactionsRes.json();
             setLikedPostIds(new Set(serverLikes));
-            
+
             const storyMap: Record<string, boolean> = {};
             viewedStories.forEach((v: any) => storyMap[`${v.story_id}-${v.image_index}`] = true);
             setViewedImages(storyMap);
@@ -1007,7 +1064,7 @@ export default function ExploreScreen() {
 
           const storiesData = await storiesRes.json();
           const postsData = await postsRes.json();
-          
+
           setStories(storiesData.map((s: any) => ({ ...s, images: typeof s.images === 'string' ? JSON.parse(s.images) : s.images })));
           setPosts(postsData.map((p: any) => ({ ...p, images: typeof p.images === 'string' ? JSON.parse(p.images) : p.images })));
 
@@ -1073,7 +1130,7 @@ export default function ExploreScreen() {
             setActivePostComments((prev) => {
               // Prevent double-adding if the current user just posted
               if (prev.some((c) => c.id === newComment.id)) return prev;
-              
+
               if (newComment.parent_id) {
                 const targetIndex = prev.findIndex(c => c.id === newComment.parent_id);
                 if (targetIndex !== -1) {
@@ -1309,7 +1366,7 @@ export default function ExploreScreen() {
       progress.setValue(0);
       animationRef.current = null;
     }
-}, [selectedStory, currentImageIndex, isPaused, isMediaLoading, config.storyDuration]);
+  }, [selectedStory, currentImageIndex, isPaused, isMediaLoading, config.storyDuration]);
 
   // Handle 25s delay for the check button visibility
   useEffect(() => {
@@ -1405,17 +1462,17 @@ export default function ExploreScreen() {
   const handleMarkAsViewed = async () => {
     if (!selectedStory) return;
     const key = `${selectedStory.id}-${currentImageIndex}`;
-    
+
     if (!viewedImages[key]) {
       const newViewed = { ...viewedImages, [key]: true };
       setViewedImages(newViewed);
       await addPoints(config.epStoryView, 'story');
       triggerRewardAnimation(config.epStoryView);
       recordInteraction('story-view', selectedStory.id, selectedStory.name, currentImageIndex);
-      
+
       graffitiScale.setValue(0);
       graffitiOpacity.setValue(1);
-      
+
       Animated.parallel([
         Animated.spring(graffitiScale, { toValue: 2, friction: 4, useNativeDriver: true }),
         Animated.timing(graffitiOpacity, { toValue: 0, duration: 1000, useNativeDriver: true })
@@ -1434,7 +1491,7 @@ export default function ExploreScreen() {
         `You are about to leave the app and go to ${selectedStory.name}'s website. Do you want to continue?`,
         [
           { text: "Cancel", style: "cancel", onPress: () => setIsPaused(false) },
-          { text: "Continue", onPress: () => { Linking.openURL(selectedStory.website!); setIsPaused(false); }},
+          { text: "Continue", onPress: () => { Linking.openURL(selectedStory.website!); setIsPaused(false); } },
         ],
         { cancelable: false }
       );
@@ -1481,7 +1538,7 @@ export default function ExploreScreen() {
         const newComment = await response.json();
         console.log('Comment submitted successfully');
         Alert.alert(t["comment submitted"] || "Comment Submitted", t["comment submitted message"] || "Your comment has been posted!");
-        
+
         // Insert the reply under the target comment if it exists, otherwise at the top
         setActivePostComments(prev => {
           if (parentId) {
@@ -1510,8 +1567,10 @@ export default function ExploreScreen() {
       } else {
         Alert.alert(t.error || "Error", t["failed to submit comment"] || "Failed to submit comment. Please try again.");
       }
-    } catch (err) { console.error('Error submitting comment:', err);
-      Alert.alert(t.error || "Error", t["connection error"] || "Connection error. Please try again."); }
+    } catch (err) {
+      console.error('Error submitting comment:', err);
+      Alert.alert(t.error || "Error", t["connection error"] || "Connection error. Please try again.");
+    }
   };
 
   const handleDeleteComment = async (commentId: string) => {
@@ -1556,12 +1615,12 @@ export default function ExploreScreen() {
     const isFullyViewed = item.images?.every((_: any, index: number) => viewedImages[`${item.id}-${index}`]);
 
     return (
-      <TouchableOpacity 
-        style={styles.storyContainer} 
-        onPress={() => { 
+      <TouchableOpacity
+        style={styles.storyContainer}
+        onPress={() => {
           setIsMediaLoading(true);
-          setSelectedStory(item); 
-          setIsPaused(false); 
+          setSelectedStory(item);
+          setIsPaused(false);
         }}
       >
         <View style={[styles.storyRing, isFullyViewed && styles.storyRingViewed]}>
@@ -1579,35 +1638,35 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>{t.explore}</Text>
-          {username ? (
-            <Text style={styles.usernameDisplay}>@{username}</Text>
-          ) : (
-            <TouchableOpacity onPress={() => router.push('/create-username')}>
-              <Text style={styles.createUsernamePrompt}>{t["create username"]}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity 
-            style={styles.walletContainer} 
-            onPress={() => router.push({
-              pathname: '/wallet-details',
-              params: { 
-                engagementPoints: (engagementPoints || 0).toString(), 
-                postsLikedToday: (postsLikedToday || 0).toString(), 
-                storiesViewedToday: (storiesViewedToday || 0).toString(), 
-                epEarnedToday: (epEarnedToday || 0).toString() 
-              }
-            })}
-          >{/* Multi-graffiti burst behind wallet */}{walletGraffitiAnimations.map((anim, i) => {
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>{t.explore}</Text>
+            {username ? (
+              <Text style={styles.usernameDisplay}>@{username}</Text>
+            ) : (
+              <TouchableOpacity onPress={() => router.push('/create-username')}>
+                <Text style={styles.createUsernamePrompt}>{t["create username"]}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.walletContainer}
+              onPress={() => router.push({
+                pathname: '/wallet-details',
+                params: {
+                  engagementPoints: (engagementPoints || 0).toString(),
+                  postsLikedToday: (postsLikedToday || 0).toString(),
+                  storiesViewedToday: (storiesViewedToday || 0).toString(),
+                  epEarnedToday: (epEarnedToday || 0).toString()
+                }
+              })}
+            >{/* Multi-graffiti burst behind wallet */}{walletGraffitiAnimations.map((anim, i) => {
               const angle = (i / 6) * 2 * Math.PI;
               const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * 45] });
               const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * 35] });
@@ -1621,110 +1680,110 @@ export default function ExploreScreen() {
                 />
               );
             })}
-            <Wallet size={18} color="#fff" />
-            <Text style={styles.walletText}>{engagementPoints} EP</Text>
-          </TouchableOpacity>
+              <Wallet size={18} color="#fff" />
+              <Text style={styles.walletText}>{engagementPoints} EP</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.notificationIconContainer} 
-            onPress={() => setIsNotificationsModalVisible(true)}
-          >
-            <Bell size={24} color="#212121" />
-            {unreadNotificationsCount > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{unreadNotificationsCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.notificationIconContainer}
+              onPress={() => setIsNotificationsModalVisible(true)}
+            >
+              <Bell size={24} color="#212121" />
+              {unreadNotificationsCount > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>{unreadNotificationsCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {!!rewardText && (
-        <Animated.Text
-          style={[
-            styles.floatingReward,
-            {
-              opacity: rewardAnim.interpolate({
-                inputRange: [0, 0.1, 0.9, 1],
-                outputRange: [0, 1, 1, 0],
-              }),
-              transform: [
-                ...rewardPos.getTranslateTransform(),
-                { scale: rewardAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 1.3, 1] }) }
-              ],
-            },
-          ]}>
-          {rewardText}
-        </Animated.Text>
-      )}
+        {!!rewardText && (
+          <Animated.Text
+            style={[
+              styles.floatingReward,
+              {
+                opacity: rewardAnim.interpolate({
+                  inputRange: [0, 0.1, 0.9, 1],
+                  outputRange: [0, 1, 1, 0],
+                }),
+                transform: [
+                  ...rewardPos.getTranslateTransform(),
+                  { scale: rewardAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 1.3, 1] }) }
+                ],
+              },
+            ]}>
+            {rewardText}
+          </Animated.Text>
+        )}
 
-      {isLoading ? (
-        <ScrollView 
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.storiesSection}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesList}>
-              {[1, 2, 3, 4, 5].map(i => <SkeletonStory key={i} />)}
-            </ScrollView>
-          </View>
-          <View style={styles.postsSection}>
-            {[1, 2].map(i => <SkeletonPost key={i} />)}
-          </View>
-        </ScrollView>
-      ) : (
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={{ paddingBottom: 120 }}
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-        >
-          {/* Stories Section */}
-          <View style={styles.storiesSection}>
-            <FlatList
-              data={stories}
-              renderItem={renderStory}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.storiesList}
-            />
-          </View>
+        {isLoading ? (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.storiesSection}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesList}>
+                {[1, 2, 3, 4, 5].map(i => <SkeletonStory key={i} />)}
+              </ScrollView>
+            </View>
+            <View style={styles.postsSection}>
+              {[1, 2].map(i => <SkeletonPost key={i} />)}
+            </View>
+          </ScrollView>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 120 }}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          >
+            {/* Stories Section */}
+            <View style={styles.storiesSection}>
+              <FlatList
+                data={stories}
+                renderItem={renderStory}
+                keyExtractor={(item) => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.storiesList}
+              />
+            </View>
 
-          {/* Posts Section */}
-          <View style={styles.postsSection}>
-            {posts.map((post) => (
-              <View key={post.id}>
-                <Post
-                  item={post}
-                  isLiked={likedPostIds.has(post.id)}
-                  initialViewedIndices={(() => {
-                    const indices = Object.keys(viewedPostImages)
-                      .filter(key => key.startsWith(`${post.id}-`))
-                      .reduce((acc, key) => {
-                        const index = parseInt(key.split('-').pop() || '0');
-                        acc[index] = true;
-                        return acc;
-                      }, {} as Record<number, boolean>);
-                    return indices;
-                  })()
-                  }
-                  onLike={async () => {
-                    if (!ensureUsername()) return;
-                    await addPoints(config.epPostLike, 'like');
-                    triggerRewardAnimation(config.epPostLike);
-                    // Like API is called inside Post component
-                  }}
-                  onNextImage={(index) => handlePostImageNext(post, index)} // Use the memoized callback
-                  onViewComments={handleViewComments}
-                  refreshCommentsTrigger={commentRefreshKeys[post.id] || 0}
-                  userUsername={username}
-                />
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      )}
+            {/* Posts Section */}
+            <View style={styles.postsSection}>
+              {posts.map((post) => (
+                <View key={post.id}>
+                  <Post
+                    item={post}
+                    isLiked={likedPostIds.has(post.id)}
+                    initialViewedIndices={(() => {
+                      const indices = Object.keys(viewedPostImages)
+                        .filter(key => key.startsWith(`${post.id}-`))
+                        .reduce((acc, key) => {
+                          const index = parseInt(key.split('-').pop() || '0');
+                          acc[index] = true;
+                          return acc;
+                        }, {} as Record<number, boolean>);
+                      return indices;
+                    })()
+                    }
+                    onLike={async () => {
+                      if (!ensureUsername()) return;
+                      await addPoints(config.epPostLike, 'like');
+                      triggerRewardAnimation(config.epPostLike);
+                      // Like API is called inside Post component
+                    }}
+                    onNextImage={(index) => handlePostImageNext(post, index)} // Use the memoized callback
+                    onViewComments={handleViewComments}
+                    refreshCommentsTrigger={commentRefreshKeys[post.id] || 0}
+                    userUsername={username}
+                  />
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        )}
       </KeyboardAvoidingView>
 
       <Modal
@@ -1736,129 +1795,133 @@ export default function ExploreScreen() {
         }}
       >
         <>
-        <Animated.View style={[styles.storyModalContainer, { transform: pan.getTranslateTransform() }]} {...panResponder.panHandlers}>
-          {/* Progress Bar Container */}
-          <View style={styles.progressBarContainer}>
-            {selectedStory?.images.map((_: any, index: number) => {
-              const n = selectedStory.images.length;
-              return (
-                <View key={index} style={styles.progressSegmentBackground}>
-                  <Animated.View 
-                    style={[
-                      styles.progressBarFill, 
-                      { 
-                        width: progress.interpolate({ 
-                          inputRange: [index / n, (index + 1) / n], 
-                          outputRange: ['0%', '100%'],
-                          extrapolate: 'clamp'
-                        }) 
-                      }
-                    ]} 
-                  />
-                </View>
-              );
-            })}
-          </View>
-
-          {!isTimerActive && (
-            <TouchableOpacity style={styles.storyCloseButton} onPress={() => setSelectedStory(null)}>
-              <X color="#fff" size={32} />
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity style={styles.pausePlayButton} onPress={() => setIsPaused(!isPaused)}>
-            {isPaused ? <Play color="#fff" size={24} /> : <Pause color="#fff" size={24} />}
-          </TouchableOpacity>
-
-          {selectedStory && (
-            <View style={styles.storyContent}>
-              {isMediaLoading && (
-                <View style={styles.mediaLoadingOverlay}>
-                  <ActivityIndicator size="large" color="#fff" />
-                </View>
-              )}
-              <Animated.View // No translation needed for icon
-                style={[ // No translation needed for icon
-                  styles.graffitiEffect, 
-                  { 
-                    transform: [{ scale: graffitiScale }], 
-                    opacity: graffitiOpacity 
-                  }
-                ]} 
-              />
-              {!!selectedStory.tag && selectedStory.show_tag !== false && (
-                <Text style={styles.storyTag}>{selectedStory.tag.toUpperCase()}</Text> 
-              )} 
-              <Text style={styles.imageCounter}>
-                {currentImageIndex + 1} / {selectedStory.images.length}
-              </Text>
-
-              {/* Tap Navigation Overlays */}
-              <View style={styles.storyTapOverlay}>
-                <TouchableOpacity style={styles.tapAreaLeft} onPress={handleStoryBack} activeOpacity={1} />
-                <TouchableOpacity style={styles.tapAreaRight} onPress={handleStoryForward} activeOpacity={1} />
-              </View>
-              
-              <Animated.View style={[styles.storyMediaWrapper, { opacity: fadeAnim }]}>
-                {isVideo(selectedStory.images[currentImageIndex]) ? (
-                  <Video
-                    source={{ uri: selectedStory.images[currentImageIndex] }}
-                    style={styles.storyFullImage}
-                    resizeMode={ResizeMode.COVER}
-                    shouldPlay={!isPaused}
-                    isLooping={false}
-                    useNativeControls={false}
-                    onLoadStart={() => setIsMediaLoading(true)}
-                    onLoad={() => setIsMediaLoading(false)}
-                  />
-                ) : (
-                  <Image 
-                    source={{ uri: selectedStory.images[currentImageIndex] }} 
-                    style={styles.storyFullImage} 
-                    resizeMode="cover" 
-                    onLoadStart={() => setIsMediaLoading(true)}
-                    onLoadEnd={() => setIsMediaLoading(false)}
-                  />
-                )}
-              </Animated.View>
-
-              {!!selectedStory.website && selectedStory.show_website !== false && (
-                <AnimatedTouchableOpacity 
-                  style={[styles.storyLinkButton, { transform: [{ scale: pulseScale }] }]} 
-                  onPress={handleCallToAction}
-                >
-                  <Text style={styles.storyLinkText}>Check out more here</Text>
-                </AnimatedTouchableOpacity>
-              )}
-
-              {canShowCheck && (
-                <TouchableOpacity 
-                  style={[
-                    styles.viewedButton, 
-                    viewedImages[`${selectedStory.id}-${currentImageIndex}`] && styles.viewedButtonActive
-                  ]} 
-                  onPress={handleMarkAsViewed}
-                  activeOpacity={0.7}
-                >
-                  {viewedImages[`${selectedStory.id}-${currentImageIndex}`] ? (
-                    <Check color="#fff" size={20} />
-                  ) : (
-                    <Plus color="#fff" size={20} />
-                  )}
-                </TouchableOpacity>
-              )}
+          <Animated.View style={[styles.storyModalContainer, { transform: pan.getTranslateTransform() }]} {...panResponder.panHandlers}>
+            {/* Progress Bar Container */}
+            <View style={styles.progressBarContainer}>
+              {selectedStory?.images.map((_: any, index: number) => {
+                const n = selectedStory.images.length;
+                return (
+                  <View key={index} style={styles.progressSegmentBackground}>
+                    <Animated.View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: progress.interpolate({
+                            inputRange: [index / n, (index + 1) / n],
+                            outputRange: ['0%', '100%'],
+                            extrapolate: 'clamp'
+                          })
+                        }
+                      ]}
+                    />
+                  </View>
+                );
+              })}
             </View>
-          )}
-        </Animated.View>
 
-        {showConfetti && (
-          <ConfettiCannon
-            count={200}
-            origin={{ x: width / 2, y: -20 }}
-            fadeOut={true}
-            onAnimationEnd={() => setShowConfetti(false)}
-          />
-        )}
+            {!isTimerActive && (
+              <TouchableOpacity style={styles.storyCloseButton} onPress={() => setSelectedStory(null)}>
+                <X color="#fff" size={32} />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.pausePlayButton} onPress={() => setIsPaused(!isPaused)}>
+              {isPaused ? <Play color="#fff" size={24} /> : <Pause color="#fff" size={24} />}
+            </TouchableOpacity>
+
+            {selectedStory && (
+              <View style={styles.storyContent}>
+                {isMediaLoading && (
+                  <View style={styles.mediaLoadingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                  </View>
+                )}
+                <Animated.View // No translation needed for icon
+                  style={[ // No translation needed for icon
+                    styles.graffitiEffect,
+                    {
+                      transform: [{ scale: graffitiScale }],
+                      opacity: graffitiOpacity
+                    }
+                  ]}
+                />
+                {!!selectedStory.tag && selectedStory.show_tag !== false && (
+                  <Text style={styles.storyTag}>{selectedStory.tag.toUpperCase()}</Text>
+                )}
+                <Text style={styles.imageCounter}>
+                  {currentImageIndex + 1} / {selectedStory.images.length}
+                </Text>
+
+                {/* Tap Navigation Overlays */}
+                <View style={styles.storyTapOverlay}>
+                  <TouchableOpacity style={styles.tapAreaLeft} onPress={handleStoryBack} activeOpacity={1} />
+                  <TouchableOpacity style={styles.tapAreaRight} onPress={handleStoryForward} activeOpacity={1} />
+                </View>
+
+                <Animated.View
+                  style={[
+                    styles.storyMediaWrapper,
+                    { opacity: fadeAnim },
+                  ]}
+                >
+                  {isVideo(selectedStory.images[currentImageIndex]) ? (
+                    <VideoView
+                      player={storyPlayer}
+                      style={styles.storyFullImage}
+                      contentFit="cover"
+                      nativeControls={false}
+                      onFirstFrameRender={() => setIsMediaLoading(false)}
+                    />
+                  ) : (
+                    <Image
+                      source={{
+                        uri: selectedStory.images[currentImageIndex],
+                      }}
+                      style={styles.storyFullImage}
+                      resizeMode="cover"
+                      onLoadStart={() => setIsMediaLoading(true)}
+                      onLoadEnd={() => setIsMediaLoading(false)}
+                    />
+                  )}
+                </Animated.View>
+
+                {!!selectedStory.website && selectedStory.show_website !== false && (
+                  <AnimatedTouchableOpacity
+                    style={[styles.storyLinkButton, { transform: [{ scale: pulseScale }] }]}
+                    onPress={handleCallToAction}
+                  >
+                    <Text style={styles.storyLinkText}>Check out more here</Text>
+                  </AnimatedTouchableOpacity>
+                )}
+
+                {canShowCheck && (
+                  <TouchableOpacity
+                    style={[
+                      styles.viewedButton,
+                      viewedImages[`${selectedStory.id}-${currentImageIndex}`] && styles.viewedButtonActive
+                    ]}
+                    onPress={handleMarkAsViewed}
+                    activeOpacity={0.7}
+                  >
+                    {viewedImages[`${selectedStory.id}-${currentImageIndex}`] ? (
+                      <Check color="#fff" size={20} />
+                    ) : (
+                      <Plus color="#fff" size={20} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </Animated.View>
+
+          {showConfetti && (
+            <ConfettiCannon
+              count={200}
+              origin={{ x: width / 2, y: -20 }}
+              fadeOut={true}
+              onAnimationEnd={() => setShowConfetti(false)}
+            />
+          )}
         </>
       </Modal>
 
@@ -2060,7 +2123,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
     borderColor: '#E0E0E0',
-    borderWidth: 1, 
+    borderWidth: 1,
     gap: 6,
   },
   postLinkText: {
@@ -2206,7 +2269,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: {width: -1, height: 1},
+    textShadowOffset: { width: -1, height: 1 },
     textShadowRadius: 10
   },
   viewedButton: {
@@ -2253,7 +2316,7 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
   storyTapOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     flexDirection: 'row',
     zIndex: 20,
   },
@@ -2264,7 +2327,7 @@ const styles = StyleSheet.create({
     flex: 2,
   },
   storyMediaWrapper: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
   },
   headerLeft: {
@@ -2577,7 +2640,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 100,
-    
+
   },
   emptyCommentsText: {
     marginTop: 15,

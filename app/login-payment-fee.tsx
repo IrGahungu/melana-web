@@ -85,7 +85,7 @@ export default function LoginPaymentFeeScreen() {
   const [fee, setFee] = useState<number>(1000);
   const [isDefaultPin, setIsDefaultPin] = useState<boolean>(false);
   const [hasError, setHasError] = useState(false);
-  
+
   // New states for privacy and PIN
   const [isBalanceVisible, setIsBalanceVisible] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
@@ -117,7 +117,7 @@ export default function LoginPaymentFeeScreen() {
           .eq('country', storedCountry)
           .eq('service_type', 'access')
           .single();
-        
+
         if (!feeError && feeData) {
           setFee(Number(feeData.fee));
           await SecureStore.setItemAsync('cached_access_fee', feeData.fee.toString());
@@ -162,7 +162,7 @@ export default function LoginPaymentFeeScreen() {
       // Try to load cached data for bad network
       const cachedFee = await SecureStore.getItemAsync('cached_access_fee');
       if (cachedFee) setFee(Number(cachedFee));
-      
+
       const storedUserId = await SecureStore.getItemAsync('userId');
       if (storedUserId) {
         setUserId(storedUserId);
@@ -193,16 +193,16 @@ export default function LoginPaymentFeeScreen() {
   // Real-time updates for the access fee
   useEffect(() => {
     if (!country) return;
-    
+
     const feeChannel = supabase
       .channel('access-fee-updates')
       .on(
         'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'service_fees', 
-          filter: `country=eq.${country}` 
+        {
+          event: '*',
+          schema: 'public',
+          table: 'service_fees',
+          filter: `country=eq.${country}`
         },
         (payload) => {
           const updatedFee = payload.new as any;
@@ -227,7 +227,7 @@ export default function LoginPaymentFeeScreen() {
       });
       return;
     }
-    
+
     setLoading(true);
     try {
       const token = await SecureStore.getItemAsync('token');
@@ -242,7 +242,7 @@ export default function LoginPaymentFeeScreen() {
 
       if (res.ok) {
         setPinModalVisible(false);
-        
+
         if (pinPurpose === 'reveal') {
           setIsBalanceVisible(true);
           setPin('');
@@ -425,12 +425,19 @@ export default function LoginPaymentFeeScreen() {
         </Text>
       </View>
 
+      {walletBalance >= 1000000 && (
+        <View style={styles.successBox}>
+          <Wallet size={20} color="#2E7D32" />
+          <Text style={styles.successText}>{t["wallet credited message"]}</Text>
+        </View>
+      )}
+
       <View style={styles.card}>
         <View style={styles.feeRow}>
           <Text style={styles.feeLabel}>{t["access fee"]}</Text>
           <Text style={styles.feeAmount}>{fee.toLocaleString()} {currency}</Text>
         </View>
-        
+
         <View style={styles.divider} />
 
         <View style={styles.walletInfo}>
@@ -439,8 +446,8 @@ export default function LoginPaymentFeeScreen() {
               <Wallet size={20} color="#212121" />
               <Text style={styles.walletTitle}>{t["gahungu wallet"]}</Text>
             </View>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               onPress={() => {
                 if (isBalanceVisible) {
                   setIsBalanceVisible(false);
@@ -466,7 +473,7 @@ export default function LoginPaymentFeeScreen() {
       <View style={styles.infoContainer}>
         <View style={styles.infoBox}>
           <Text style={styles.infoText}>
-            {isDefaultPin 
+            {isDefaultPin
               ? t["default pin notice"]
               : t["fee support message"]}
           </Text>
@@ -480,8 +487,8 @@ export default function LoginPaymentFeeScreen() {
         </View>
       )}
 
-      <TouchableOpacity 
-        style={[styles.payButton, loading && styles.disabledButton]} 
+      <TouchableOpacity
+        style={[styles.payButton, loading && styles.disabledButton]}
         onPress={handlePayFeePress}
         disabled={loading}
       >
@@ -495,8 +502,8 @@ export default function LoginPaymentFeeScreen() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity 
-        style={styles.logoutButton} 
+      <TouchableOpacity
+        style={styles.logoutButton}
         onPress={handleLogout}
       >
         <LogOut size={20} color="#d32f2f" />
@@ -505,7 +512,7 @@ export default function LoginPaymentFeeScreen() {
 
       {hasError && (
         <TouchableOpacity
-          style={styles.retryButton} 
+          style={styles.retryButton}
           onPress={() => { setFetchingData(true); fetchData(); }}
         >
           <PlusCircle size={20} color="#F44336" />
@@ -520,7 +527,7 @@ export default function LoginPaymentFeeScreen() {
         onRequestClose={handleCloseModal}
       >
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView 
+          <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.modalContent}
           >
@@ -528,7 +535,7 @@ export default function LoginPaymentFeeScreen() {
             <Text style={styles.modalSubtitle}>
               {pinPurpose === 'pay' ? t["enter pin to pay"] : t["enter pin to show balance"]}
             </Text>
-            
+
             <TextInput
               style={styles.pinInput}
               value={pin}
@@ -541,7 +548,7 @@ export default function LoginPaymentFeeScreen() {
               autoFocus
             />
 
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => { setPinModalVisible(false); setSupportModalVisible(true); }}
               style={styles.forgotPinContainer}
             >
@@ -671,6 +678,19 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   warningText: { flex: 1, fontSize: 13, color: '#E65100', fontWeight: 'bold' },
+  successBox: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  successText: { flex: 1, fontSize: 13, color: '#2E7D32', fontWeight: 'bold' },
   skeletonLine: {
     backgroundColor: '#e0e0e0',
     borderRadius: 4,

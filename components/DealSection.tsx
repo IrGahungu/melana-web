@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Image, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  ScrollView,
   TouchableOpacity,
   Animated
 } from 'react-native';
@@ -80,8 +80,8 @@ const DealItem = ({ deal, baseUrl }: { deal: DealOfTheDay; baseUrl: string }) =>
           </View>
         ) : (
           <View style={styles.imageContainer}>
-            <Image 
-              source={{ uri: deal.image && !deal.image.startsWith('http') ? `${baseUrl}${deal.image}` : deal.image }} 
+            <Image
+              source={{ uri: deal.image && !deal.image.startsWith('http') ? `${baseUrl}${deal.image}` : deal.image }}
               style={styles.dealImage}
               onLoadStart={() => setIsImageLoading(true)}
               onLoadEnd={() => setIsImageLoading(false)}
@@ -113,9 +113,9 @@ interface DealSectionProps {
   baseUrl?: string;
 }
 
-const DealSection: React.FC<DealSectionProps> = ({ 
-  title, 
-  viewAllLink, 
+const DealSection: React.FC<DealSectionProps> = ({
+  title,
+  viewAllLink,
   baseUrl = "",
 }) => {
   const [deals, setDeals] = useState<DealOfTheDay[]>([]);
@@ -156,6 +156,17 @@ const DealSection: React.FC<DealSectionProps> = ({
     };
 
     fetchDeals();
+
+    const channel = supabase
+      .channel('deals-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deals', filter: `country=eq.${country}` }, () => {
+        fetchDeals();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [country]);
 
   if (loading || fetchError) {
@@ -185,9 +196,9 @@ const DealSection: React.FC<DealSectionProps> = ({
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
       </View>
-      
-      <ScrollView 
-        horizontal 
+
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -227,6 +238,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingLeft: 16,
     paddingRight: 8,
+    paddingTop: 16,
   },
   dealCard: {
     width: 140,
@@ -249,24 +261,30 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 12,
   },
   skeleton: {
     backgroundColor: '#e0e0e0',
-    borderRadius: 12,
+    width: '100%',
+    height: '100%',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
+  
   skeletonText: {
     height: 16,
     backgroundColor: '#e0e0e0',
     borderRadius: 4,
     marginBottom: 4,
   },
+
   dealInfo: {
     alignItems: 'center',
   },
+
   dealTitle: {
     fontFamily: 'Roboto-Medium',
     fontSize: 14,
@@ -274,6 +292,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     textAlign: 'center',
   },
+
   dealDiscount: {
     fontFamily: 'Roboto-Regular',
     fontSize: 14,
@@ -281,12 +300,14 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     textAlign: 'center',
   },
+
   dealTagline: {
     fontFamily: 'Roboto-Regular',
     fontSize: 12,
     color: '#757575',
     textAlign: 'center',
   },
+
   noDataText: {
     textAlign: 'center',
     paddingHorizontal: 16,
@@ -294,6 +315,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto-Regular',
     fontSize: 14,
   },
+  
 });
 
 export default DealSection;

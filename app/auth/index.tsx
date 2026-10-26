@@ -21,7 +21,6 @@ import { Link, useRouter } from "expo-router";
 import { API_BASE_URL } from "@/config";
 import CountryPicker from "@/components/CountryPicker";
 import { useLanguageStore, translations } from "@/stores/languageStore";
-import DropDownPicker from "react-native-dropdown-picker";
 
 const backgroundImage = require("@/assets/images/two.jpg");
 
@@ -38,7 +37,7 @@ const COUNTRIES = [
 const AuthScreen = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { language, setLanguage } = useLanguageStore();
+  const { language } = useLanguageStore();
   const t = translations[language];
 
   const [whatsappNumber, setWhatsappNumber] = useState("");
@@ -48,13 +47,6 @@ const AuthScreen = () => {
   const [checkingLogin, setCheckingLogin] = useState(true); // ✅ check token on startup
   const [errors, setErrors] = useState<{ whatsappNumber?: string; password?: string; country?: string }>({});
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-
-  const [langOpen, setLangOpen] = useState(false);
-  const [langItems, setLangItems] = useState([
-    { label: "English", value: "en" },
-    { label: "Français", value: "fr" },
-    { label: "Kirundi", value: "rn" },
-  ]);
 
   // ✅ Check if user is already logged in
   useEffect(() => {
@@ -152,26 +144,6 @@ const AuthScreen = () => {
     <ImageBackground source={backgroundImage} style={styles.background} resizeMode="cover">
       <View style={styles.overlay} />
 
-      {/* Language Selector - Pinned to Top Right Corner */}
-      <View style={[styles.langSelectorWrapper, { top: insets.top + 10 }]}>
-        <DropDownPicker
-          open={langOpen}
-          value={language}
-          items={langItems}
-          setOpen={setLangOpen}
-          setValue={(callback) => {
-            const val = typeof callback === 'function' ? callback(language) : callback;
-            setLanguage(val as any);
-          }}
-          setItems={setLangItems}
-          placeholder={t["language"]}
-          style={styles.langDropdown}
-          dropDownContainerStyle={styles.langDropdownContainer}
-          containerStyle={styles.langContainer}
-          listMode="SCROLLVIEW"
-        />
-      </View>
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -188,9 +160,6 @@ const AuthScreen = () => {
             <View style={styles.innerContainer}>
               <View style={styles.headingContainer}>
                 <Text style={styles.label}>{t["welcome message"]}</Text>
-                <Text style={styles.description}>
-                  {t["Dieu avec Gahungu, Votre Santé est assurée"]}
-                </Text>
               </View>
 
               <View style={styles.form}>
@@ -306,7 +275,7 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255,255,255,0.7)",
   },
   headingContainer: {
@@ -323,6 +292,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "purple",
     textAlign: "center",
+    fontStyle: 'italic',
   },
   form: {
     width: "100%",
@@ -410,13 +380,13 @@ const styles = StyleSheet.create({
     zIndex: 2000,
   },
   langContainer: { width: 130 },
-  langDropdown: { 
-    backgroundColor: "white", 
-    borderRadius: 25, 
-    borderWidth: 1, 
-    borderColor: "#4CAF50", 
-    minHeight: 40, 
-    paddingHorizontal: 10 
+  langDropdown: {
+    backgroundColor: "white",
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: "#4CAF50",
+    minHeight: 40,
+    paddingHorizontal: 10
   },
   langDropdownContainer: { borderColor: "lightgray", borderRadius: 15 },
 });

@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "melana",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.melana.app",
@@ -27,7 +26,11 @@
       "expo-router",
       "expo-font",
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-video",
+      "expo-sharing",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "extra": {
       "router": {},
@@ -35,6 +38,12 @@
         "projectId": "9b9f1293-f14e-4336-8e58-052c03ec24c7"
       }
     },
-    "owner": "gahungu"
+    "owner": "gahungu",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/9b9f1293-f14e-4336-8e58-052c03ec24c7"
+    }
   }
 }

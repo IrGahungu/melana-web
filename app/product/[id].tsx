@@ -102,6 +102,7 @@ export default function ProductDetailScreen() {
   const insets = useSafeAreaInsets();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [country, setCountry] = useState<string | null>(null);
   const showToast = useToastStore(state => state.showToast);
@@ -110,6 +111,7 @@ export default function ProductDetailScreen() {
   const [showCallCarButton, setShowCallCarButton] = useState(true);
   const language = useLanguageStore(state => state.language);
   const t: any = translations[language];
+  const [imageLoading, setImageLoading] = useState(true);
 
   useEffect(() => {
     const fetchCountry = async () => {
@@ -119,30 +121,30 @@ export default function ProductDetailScreen() {
 
     fetchCountry();
     const fetchSettings = async () => {
-          try {
-            const res = await fetch(`${API_BASE_URL}/api/config/engagement-settings`);
-            if (res.ok) {
-              const data = await res.json();
-              setShowCallCarButton(data.show_call_car_button_product !== false);
-            }
-          } catch (error) { console.error(error); }
-        };
-        fetchSettings();
-    
-        const channel = supabase.channel('product-call-car-visibility')
-          .on('postgres_changes', { 
-            event: '*', 
-            schema: 'public', 
-            table: 'settings', 
-            filter: 'key=eq.show_call_car_button_product' 
-          }, (payload: any) => {
-            if (payload.new) {
-              setShowCallCarButton(payload.new.value !== 'false');
-            }
-          }).subscribe();
-    
-        return () => { supabase.removeChannel(channel); };
-      }, []);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/config/engagement-settings`);
+        if (res.ok) {
+          const data = await res.json();
+          setShowCallCarButton(data.show_call_car_button_product !== false);
+        }
+      } catch (error) { console.error(error); }
+    };
+    fetchSettings();
+
+    const channel = supabase.channel('product-call-car-visibility')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'settings',
+        filter: 'key=eq.show_call_car_button_product'
+      }, (payload: any) => {
+        if (payload.new) {
+          setShowCallCarButton(payload.new.value !== 'false');
+        }
+      }).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   // Fetch "Add to Cart" button visibility setting
   useEffect(() => {
@@ -164,11 +166,11 @@ export default function ProductDetailScreen() {
       .channel('cart-button-visibility-sync')
       .on(
         'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'settings', 
-          filter: 'key=eq.show_add_to_cart_button' 
+        {
+          event: '*',
+          schema: 'public',
+          table: 'settings',
+          filter: 'key=eq.show_add_to_cart_button'
         },
         (payload) => {
           if (payload.new) {
@@ -186,6 +188,7 @@ export default function ProductDetailScreen() {
 
 
   useEffect(() => {
+    setImageLoaded(false);
     if (!id) {
       setProduct(null);
       setLoading(false);
@@ -208,57 +211,57 @@ export default function ProductDetailScreen() {
         // 2. Fetch all stocks with the same name to list all pharmacies
         const userCountry = await SecureStore.getItemAsync("user_country");
         const normalizedName = stockData.name.trim().replace(/[.,]$/, "");
-        
+
         const { data: allStocks } = await supabase
-            .from('stock')
-            .select(`
+          .from('stock')
+          .select(`
                 *,
                 pharmacy:pharmacy_applications!stock_pharmacy_id_fkey (
                     id, name, image, location, accepted_insurances, country
                 )
             `)
-            .ilike('name', normalizedName)
-            .eq('in_stock', true)
-            .ilike('pharmacy.country', userCountry ? userCountry.trim() : '');
+          .ilike('name', normalizedName)
+          .eq('in_stock', true)
+          .ilike('pharmacy.country', userCountry ? userCountry.trim() : '');
 
         let pharmacyList: any[] = [];
 
         if (allStocks) {
-             pharmacyList = allStocks
-                .filter((item: any) => item.pharmacy)
-                .map((item: any) => {
-                    const pData = item.pharmacy;
-                    
-                    let parsedLocation = [];
-                    try {
-                        parsedLocation = typeof pData.location === 'string' ? JSON.parse(pData.location) : pData.location || [];
-                    } catch (e) { parsedLocation = []; }
+          pharmacyList = allStocks
+            .filter((item: any) => item.pharmacy)
+            .map((item: any) => {
+              const pData = item.pharmacy;
 
-                    let parsedInsurances = [];
-                    try {
-                        parsedInsurances = typeof pData.accepted_insurances === 'string' ? JSON.parse(pData.accepted_insurances) : pData.accepted_insurances || [];
-                    } catch (e) { parsedInsurances = []; }
+              let parsedLocation = [];
+              try {
+                parsedLocation = typeof pData.location === 'string' ? JSON.parse(pData.location) : pData.location || [];
+              } catch (e) { parsedLocation = []; }
 
-                    let productInsurances = null;
-                    if (item.insurances) {
-                        try {
-                            productInsurances = typeof item.insurances === 'string' ? JSON.parse(item.insurances) : item.insurances;
-                        } catch (e) { productInsurances = null; }
-                    }
-                    const finalInsurances = (Array.isArray(productInsurances) && productInsurances.length > 0) ? productInsurances : parsedInsurances;
+              let parsedInsurances = [];
+              try {
+                parsedInsurances = typeof pData.accepted_insurances === 'string' ? JSON.parse(pData.accepted_insurances) : pData.accepted_insurances || [];
+              } catch (e) { parsedInsurances = []; }
 
-                    return {
-                        id: pData.id,
-                        name: pData.name,
-                        image: pData.image,
-                        locations: Array.isArray(parsedLocation) ? parsedLocation.map((l: any) => `${l.city || ''} ${l.address || ''}`.trim()).filter(Boolean) : [],
-                        insurances: Array.isArray(finalInsurances) ? finalInsurances : [],
-                        price: item.price,
-                        originalPrice: item.original_price,
-                        stockId: item.id,
-                        medicineId: item.medicine_id
-                    };
-                });
+              let productInsurances = null;
+              if (item.insurances) {
+                try {
+                  productInsurances = typeof item.insurances === 'string' ? JSON.parse(item.insurances) : item.insurances;
+                } catch (e) { productInsurances = null; }
+              }
+              const finalInsurances = (Array.isArray(productInsurances) && productInsurances.length > 0) ? productInsurances : parsedInsurances;
+
+              return {
+                id: pData.id,
+                name: pData.name,
+                image: pData.image,
+                locations: Array.isArray(parsedLocation) ? parsedLocation.map((l: any) => `${l.city || ''} ${l.address || ''}`.trim()).filter(Boolean) : [],
+                insurances: Array.isArray(finalInsurances) ? finalInsurances : [],
+                price: item.price,
+                originalPrice: item.original_price,
+                stockId: item.id,
+                medicineId: item.medicine_id
+              };
+            });
         }
 
         // Sort by price ascending
@@ -438,11 +441,29 @@ export default function ProductDetailScreen() {
       >
 
         {product.image ? (
-          <Image
-            source={{ uri: product.image && !product.image.toString().startsWith('http') ? `${MEDICINE_URL_PREFIX}${product.image}` : product.image.toString() }}
-            style={styles.productImage}
-            resizeMode="cover"
-          />
+          <View style={{ position: 'relative', width: '95%', alignSelf: 'center', height: 250, marginVertical: 16, borderRadius: 20, overflow: 'hidden' }}>
+            <Image
+              source={{
+                uri: product.image && !product.image.toString().startsWith('http')
+                  ? `${MEDICINE_URL_PREFIX}${product.image}`
+                  : product.image.toString()
+              }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+              onLoadStart={() => setImageLoading(true)}
+              onLoadEnd={() => setImageLoading(false)}
+            />
+            {imageLoading && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center' }}>
+                <View style={StyleSheet.absoluteFill}>
+                  <SkeletonPulse>
+                    <View style={{ width: '100%', height: '100%', backgroundColor: '#e0e0e0' }} />
+                  </SkeletonPulse>
+                </View>
+                <ActivityIndicator size="large" color="#4CAF50" />
+              </View>
+            )}
+          </View>
         ) : (
           <View style={styles.placeholderImage}>
             <Icon name="medication" size={40} color="#666" />
@@ -457,16 +478,16 @@ export default function ProductDetailScreen() {
 
           {/* Available At Lock */}
           <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t["available at"]}</Text>
+            <Text style={styles.sectionTitle}>{t["available at"]}</Text>
             {product.pharmacies && product.pharmacies.length > 0 ? (
               product.pharmacies.map((pharmacy) => (
                 <View key={pharmacy.id} style={styles.pharmacyRow}>
                   <TouchableOpacity
-                      style={styles.selectionContainer}
-                      onPress={() => setSelectedPharmacyId(pharmacy.id)}
-                    >
-                      <Icon name={selectedPharmacyId === pharmacy.id ? "radio-button-checked" : "radio-button-unchecked"} size={24} color={selectedPharmacyId === pharmacy.id ? "#4CAF50" : "#9e9e9e"} />
-                    </TouchableOpacity>
+                    style={styles.selectionContainer}
+                    onPress={() => setSelectedPharmacyId(pharmacy.id)}
+                  >
+                    <Icon name={selectedPharmacyId === pharmacy.id ? "radio-button-checked" : "radio-button-unchecked"} size={24} color={selectedPharmacyId === pharmacy.id ? "#4CAF50" : "#9e9e9e"} />
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={[
                       styles.pharmacyCard,
@@ -519,8 +540,8 @@ export default function ProductDetailScreen() {
                         <View style={{ paddingLeft: 24 }}>
                           {(pharmacy as any).locations && (pharmacy as any).locations.length > 0
                             ? (pharmacy as any).locations.map((loc: string, i: number) => (
-                                <Text key={i} style={styles.detailTextList}>{loc}</Text>
-                              ))
+                              <Text key={i} style={styles.detailTextList}>{loc}</Text>
+                            ))
                             : <Text style={styles.detailTextList}>{pharmacy.location || 'Location not specified'}</Text>
                           }
                         </View>
@@ -547,13 +568,13 @@ export default function ProductDetailScreen() {
             )}
           </View>
           {showCallCarButton && (
-                     <Pressable
-                       style={styles.carButton}
-                       onPress={() => showToast('Dr. IR. Gahungu ariko arabikora.', 1000)}
-                     >
-                       <Text style={styles.carButtonText}>Fyonda ngaha uhamagare umuduga ugushikana</Text> 
-                     </Pressable>
-                     )}
+            <Pressable
+              style={styles.carButton}
+              onPress={() => showToast('Dr. IR. Gahungu ariko arabikora.', 1000)}
+            >
+              <Text style={styles.carButtonText}>Fyonda ngaha uhamagare umuduga ugushikana</Text>
+            </Pressable>
+          )}
         </View>
 
         {showAddToCartButton && (
@@ -647,15 +668,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   productImage: {
-    width: '100%',
+    width: '95%',
+    alignSelf: 'center',
     height: 250,
-    borderRadius: 12,
+    borderRadius: 20,
+    marginVertical: 16,
   },
   placeholderImage: {
-    width: '100%',
+    width: '95%',
+    alignSelf: 'center',
     height: 250,
     backgroundColor: '#e0e0e0',
-    borderRadius: 12,
+    borderRadius: 20,
+    marginVertical: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -981,11 +1006,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto-Medium',
   },
   skeletonImage: {
-    width: '100%',
+    width: '95%',
+    alignSelf: 'center',
     height: 250,
     backgroundColor: '#e0e0e0',
-    borderRadius: 12,
-    marginBottom: 16,
+    borderRadius: 20,
+    marginVertical: 16,
   },
   skeletonLine: {
     backgroundColor: '#e0e0e0',

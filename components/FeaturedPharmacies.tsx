@@ -19,6 +19,7 @@ type SimplePharmacy = {
   id: string;
   name: string;
   image: string | null;
+  status?: string;
 };
 
 const PharmacySkeleton = () => {
@@ -83,19 +84,19 @@ const PharmacyItem = ({ item, baseUrl }: { item: SimplePharmacy; baseUrl: string
           </View>
         ) : (
           <>
-            <Image 
-              source={{ uri: item.image && !item.image.startsWith('http') ? `${baseUrl}${item.image}` : item.image }} 
-              style={styles.image} 
-              resizeMode="cover" 
-              onLoadStart={() => setIsImageLoading(true)} 
+            <Image
+              source={{ uri: item.image && !item.image.startsWith('http') ? `${baseUrl}${item.image}` : item.image }}
+              style={styles.image}
+              resizeMode="cover"
+              onLoadStart={() => setIsImageLoading(true)}
               onLoadEnd={() => {
                 setIsImageLoading(false);
                 setHasError(false);
-              }} 
+              }}
               onError={() => {
                 setHasError(true);
                 setIsImageLoading(false);
-              }} 
+              }}
             />
             {isImageLoading && (
               <View style={styles.loadingOverlay}>
@@ -143,7 +144,8 @@ export default function FeaturedPharmacies({ title, onViewAll, baseUrl = "" }: P
       setLoading(true);
       const { data, error } = await supabase
         .from('pharmacy_applications')
-        .select('id, name, image')
+        .select('id, name, image, status')
+        .eq('status', 'approved')
         .ilike('country', country.trim())
         .order('created_at', { ascending: false })
         .limit(4);
@@ -158,6 +160,17 @@ export default function FeaturedPharmacies({ title, onViewAll, baseUrl = "" }: P
     };
 
     fetchPharmacies();
+
+    const channel = supabase
+      .channel('featured-pharmacies-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pharmacy_applications', filter: `country=eq.${country}` }, () => {
+        fetchPharmacies();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [country]);
 
   const rows = [];
@@ -211,52 +224,52 @@ export default function FeaturedPharmacies({ title, onViewAll, baseUrl = "" }: P
 }
 
 const styles = StyleSheet.create({
-  section: { 
-    marginTop: 16, 
-    paddingHorizontal: 16, 
-    backgroundColor: '#fff', 
+  section: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
     paddingBottom: 10,
     borderRadius: 20,
   },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 12, 
-    paddingTop: 12 
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingTop: 12
   },
-  title: { 
+  title: {
     fontFamily: 'Roboto-Bold',
     fontSize: 16,
     color: '#212121',
     alignItems: 'center',
   },
-  viewAll: { 
-    fontSize: 14, 
-    color: 'blue' 
+  viewAll: {
+    fontSize: 14,
+    color: 'blue'
   },
-  row: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    marginBottom: 16 
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16
   },
-  cardBase: { 
-    width: '48%', 
-    marginBottom: 16, 
-    borderRadius: 12, 
-    backgroundColor: 'white', 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.2, 
-    shadowRadius: 4, 
-    elevation: 4, 
-    overflow: Platform.OS === 'ios' ? 'visible' : 'hidden' 
+  cardBase: {
+    width: '48%',
+    marginBottom: 16,
+    borderRadius: 12,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    overflow: Platform.OS === 'ios' ? 'visible' : 'hidden'
   },
-  image: { 
-    width: '100%', 
-    height: 120, 
-    borderTopLeftRadius: 12, 
-    borderTopRightRadius: 12 
+  image: {
+    width: '100%',
+    height: 120,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12
   },
   imageContainer: {
     width: '100%',
@@ -271,7 +284,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
@@ -280,7 +293,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#e0e0e0',
     width: '100%',
     height: '100%',
-    borderRadius: 12, // Match card border radius
+    borderRadius: 12,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12, // Match card border radius
   },
   skeletonText: {
     height: 16,
@@ -288,19 +303,19 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: 4,
   },
-  defaultCard: { 
-    height: 220 
+  defaultCard: {
+    height: 220
   },
   details: {
     flex: 1,
     padding: 12,
     justifyContent: 'center',
   },
-  name: { 
-    fontSize: 16, 
-    fontWeight: '500', 
-    textAlign: 'center', 
-    color: '#212121' 
+  name: {
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+    color: '#212121'
   },
   detailsButton: {
     marginTop: 8,
@@ -320,10 +335,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto-Regular',
     fontSize: 14,
   },
-  location: { 
-    fontSize: 12, 
-    color: '#777', 
-    textAlign: 'center', 
-    marginTop: 2 
+  location: {
+    fontSize: 12,
+    color: '#777',
+    textAlign: 'center',
+    marginTop: 2
   },
 });

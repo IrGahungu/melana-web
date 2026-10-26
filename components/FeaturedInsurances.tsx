@@ -36,7 +36,7 @@ const InsuranceSkeleton = () => {
     pulse.start();
     return () => pulse.stop();
   }, [pulseAnim]);
-  
+
   return <Animated.View style={[styles.skeleton, { opacity: pulseAnim }, styles.image]} />;
 };
 
@@ -138,16 +138,17 @@ export default function FeaturedInsurances({ title, baseUrl = "" }: Props) {
     const fetchInsurances = async () => {
       console.log('[FeaturedInsurances] Fetching... | Country Filter:', country);
       setLoading(true);
-      
+
       let query = supabase
         .from('insurance_applications')
         .select('id, name, image, status, country')
-        
+        .eq('status', 'approved')
+
         .order('created_at', { ascending: false })
         .limit(4);
 
       if (country) {
-        query = query.eq('country', country);
+        query = query.ilike('country', country.trim());
       }
 
       const { data, error } = await query;
@@ -170,6 +171,17 @@ export default function FeaturedInsurances({ title, baseUrl = "" }: Props) {
     };
 
     fetchInsurances();
+
+    const channel = supabase
+      .channel('featured-insurances-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'insurance_applications', filter: `country=eq.${country}` }, () => {
+        fetchInsurances();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [country]);
 
   const renderItem = ({ item }: { item: FeaturedInsurance }) => (
@@ -213,8 +225,8 @@ export default function FeaturedInsurances({ title, baseUrl = "" }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    paddingVertical: 16 ,
+  container: {
+    paddingVertical: 16,
     marginBottom: 40,
   },
   header: {
@@ -224,8 +236,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
   },
-  list: { 
-    paddingHorizontal: 16 
+  list: {
+    paddingHorizontal: 16
   },
   card: {
     backgroundColor: 'white',
@@ -248,11 +260,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
   },
-  image: { 
-    width: '100%', 
-    height: 120, 
-    borderTopLeftRadius: 12, 
-    borderTopRightRadius: 12 
+  image: {
+    width: '100%',
+    height: 120,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12
   },
   placeholderImage: {
     backgroundColor: '#f0f0f0',
@@ -260,14 +272,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 12,
   },
-  details: { 
-    padding: 12 
+  details: {
+    padding: 12
   },
   title: {
     fontFamily: 'Roboto-Bold',
@@ -292,6 +304,8 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 12,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   skeletonText: {
     height: 16,

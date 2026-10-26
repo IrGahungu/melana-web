@@ -144,6 +144,7 @@ export default function DoctorDetailScreen() {
   const [showCallCarButton, setShowCallCarButton] = useState(true);
   const [showBookOnlineButton, setShowBookOnlineButton] = useState(true);
   const [showBookInOfficeButton, setShowBookInOfficeButton] = useState(true);
+  const [imageLoading, setImageLoading] = useState(true);
 
   console.log('[DoctorDetail] Initial state of showBookOnlineButton (component mount):', showBookOnlineButton);
   console.log('[DoctorDetail] Initial state of showBookInOfficeButton (component mount):', showBookInOfficeButton);
@@ -531,15 +532,29 @@ export default function DoctorDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         {doctor.image ? (
-          <Image
-            source={{ 
-              uri: doctor.image && !doctor.image.startsWith('http') 
-                ? `${DOCTOR_URL_PREFIX}${doctor.image}` 
-                : doctor.image 
-            }}
-            style={styles.doctorImage}
-            resizeMode="cover"
-          />
+          <View style={{ position: 'relative', width: '70%', alignSelf: 'center', height: 300, marginVertical: 16, borderRadius: 20, overflow: 'hidden' }}>
+            <Image
+              source={{ 
+                uri: doctor.image && !doctor.image.startsWith('http') 
+                  ? `${DOCTOR_URL_PREFIX}${doctor.image}` 
+                  : doctor.image 
+              }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+              onLoadStart={() => setImageLoading(true)}
+              onLoadEnd={() => setImageLoading(false)}
+            />
+            {imageLoading && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center' }}>
+                <View style={StyleSheet.absoluteFill}>
+                  <SkeletonPulse>
+                    <View style={{ width: '100%', height: '100%', backgroundColor: '#e0e0e0' }} />
+                  </SkeletonPulse>
+                </View>
+                <ActivityIndicator size="large" color="#4CAF50" />
+              </View>
+            )}
+          </View>
         ) : (
           <View style={styles.placeholderImage}>
             <Text style={styles.placeholderText}>{t["no image available"]}</Text>
@@ -893,10 +908,11 @@ backButton: {
     marginVertical: 16,
   },
   placeholderImage: {
-    width: '100%',
-    height: 250,
+    width: '70%',
+    alignSelf: 'center',
+    height: 300,
     backgroundColor: '#e0e0e0',
-    borderRadius: 12,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 16,
@@ -907,9 +923,9 @@ backButton: {
     fontFamily: 'Roboto-Regular',
   },
   skeletonImage: {
-    width: '95%',
+    width: '70%',
     alignSelf: 'center',
-    height: 250,
+    height: 300,
     backgroundColor: '#e0e0e0',
     borderRadius: 20,
     marginVertical: 16,

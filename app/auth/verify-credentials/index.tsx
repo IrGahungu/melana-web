@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     overlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         backgroundColor: "rgba(255,255,255,0.7)",
     },
     screen: {

@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  Image, 
-  TouchableOpacity, 
-  Dimensions, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  Dimensions,
   Platform,
-  Animated 
+  Animated
 } from 'react-native';
 import { router } from 'expo-router';
 import { Product } from '@/types';
@@ -79,22 +79,22 @@ const SkeletonCard = () => (
   </View>
 );
 
-const ProductItem = ({ 
-  item, 
-  baseUrl, 
-  onPress 
-}: { 
-  item: Product; 
-  baseUrl: string; 
-  onPress: (p: Product) => void 
-}) => { 
+const ProductItem = ({
+  item,
+  baseUrl,
+  onPress
+}: {
+  item: Product;
+  baseUrl: string;
+  onPress: (p: Product) => void
+}) => {
   const [isImageLoading, setIsImageLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const language = useLanguageStore(state => state.language);
   const t = translations[language];
 
-  const imageUrl = item.image && !item.image.toString().startsWith('http') 
-    ? `${baseUrl}${item.image}` 
+  const imageUrl = item.image && !item.image.toString().startsWith('http')
+    ? `${baseUrl}${item.image}`
     : item.image?.toString();
 
   return (
@@ -155,7 +155,8 @@ const ProductGrid: React.FC<ProductGridProps> = ({ title, products: productsProp
         const { data: pharmacies } = await supabase
           .from('pharmacy_applications')
           .select('id')
-          .eq('country', storedCountry);
+          .eq('country', storedCountry)
+          .eq('status', 'approved');
 
         if (pharmacies) {
           setPharmacyIds(pharmacies.map((p) => p.id));
@@ -184,7 +185,8 @@ const ProductGrid: React.FC<ProductGridProps> = ({ title, products: productsProp
       const { data: pharmacies } = await supabase
         .from('pharmacy_applications')
         .select('id')
-        .eq('country', country);
+        .eq('country', country)
+        .eq('status', 'approved');
       currentPharmacyIds = pharmacies?.map((p) => p.id) || [];
       setPharmacyIds(currentPharmacyIds);
     }
@@ -228,12 +230,12 @@ const ProductGrid: React.FC<ProductGridProps> = ({ title, products: productsProp
     const channel = supabase
       .channel(`public:stock:country=${country}`)
       .on(
-        'postgres_changes', 
-        { event: '*', schema: 'public', table: 'stock' }, 
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stock' },
         (payload: any) => {
-        console.log(`[ProductGrid] Real-time ${payload.eventType} detected on stock.`, payload.new?.id);
-        fetchProducts(true);
-      })
+          console.log(`[ProductGrid] Real-time ${payload.eventType} detected on stock.`, payload.new?.id);
+          fetchProducts(true);
+        })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('[ProductGrid] Subscribed to real-time stock updates');
@@ -342,6 +344,16 @@ const styles = StyleSheet.create({
   imageContainer: {
     width: '100%',
     height: 150,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
+  },
+  skeletonImageContainer: {
+    width: '100%',
+    height: 150,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
   },
   placeholderImage: {
     width: '100%',
@@ -353,13 +365,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
   },
   skeleton: {
     backgroundColor: '#e0e0e0',
     width: '100%',
     height: '100%',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   placeholderText: {
     fontSize: 12,

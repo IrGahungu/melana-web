@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   },
   background: { flex: 1 },
   scrollContainer: { flexGrow: 1, paddingHorizontal: 20, gap: 20, justifyContent: "center" },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.7)" },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(255,255,255,0.7)" },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',

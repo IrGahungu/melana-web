@@ -117,6 +117,7 @@ export default function PharmacyDetailScreen() {
   const language = useLanguageStore(state => state.language);
   const t = translations[language];
   const [showCallCarButton, setShowCallCarButton] = useState(true);
+  const [imageLoading, setImageLoading] = useState(true);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -342,7 +343,25 @@ export default function PharmacyDetailScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {pharmacy.image ? (
-              <Image source={{ uri: pharmacy.image && !pharmacy.image.startsWith('http') ? `${PHARMACY_URL_PREFIX}${pharmacy.image}` : pharmacy.image }} style={styles.pharmacyImage} resizeMode="cover" />
+              <View style={{ position: 'relative', width: '95%', alignSelf: 'center', height: 250, marginVertical: 16, borderRadius: 20, overflow: 'hidden' }}>
+                <Image 
+                  source={{ uri: pharmacy.image && !pharmacy.image.startsWith('http') ? `${PHARMACY_URL_PREFIX}${pharmacy.image}` : pharmacy.image }} 
+                  style={{ width: '100%', height: '100%' }} 
+                  resizeMode="cover" 
+                  onLoadStart={() => setImageLoading(true)}
+                  onLoadEnd={() => setImageLoading(false)}
+                />
+                {imageLoading && (
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center' }}>
+                    <View style={StyleSheet.absoluteFill}>
+                      <SkeletonPulse>
+                        <View style={{ width: '100%', height: '100%', backgroundColor: '#e0e0e0' }} />
+                      </SkeletonPulse>
+                    </View>
+                    <ActivityIndicator size="large" color="#4CAF50" />
+                  </View>
+                )}
+              </View>
             ) : (
               <View style={styles.placeholderImage}>
                 <Text style={styles.placeholderText}>No Image Available</Text>

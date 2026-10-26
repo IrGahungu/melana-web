@@ -157,6 +157,10 @@ export default function BusBookingScreen() {
                   style={styles.dropdown}
                   dropDownContainerStyle={styles.dropdownContainer}
                   listMode="SCROLLVIEW"
+                  selectedItemContainerStyle={styles.dropdownSelectedItemContainer}
+                  selectedItemLabelStyle={styles.dropdownSelectedItemLabel}
+                  listItemLabelStyle={styles.dropdownListItemLabel}
+                  listItemContainerStyle={styles.dropdownListItemContainer}
                 />
               )}
             </View>
@@ -185,6 +189,10 @@ export default function BusBookingScreen() {
                   style={styles.dropdown}
                   dropDownContainerStyle={styles.dropdownContainer}
                   listMode="SCROLLVIEW"
+                  selectedItemContainerStyle={styles.dropdownSelectedItemContainer}
+                  selectedItemLabelStyle={styles.dropdownSelectedItemLabel}
+                  listItemLabelStyle={styles.dropdownListItemLabel}
+                  listItemContainerStyle={styles.dropdownListItemContainer}
                 />
               )}
             </View>
@@ -280,9 +288,32 @@ const styles = StyleSheet.create({
   },
   dropdownContainer: {
     borderWidth: 1,
-    borderColor: '#F5F5F5',
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+  },
+  dropdownSelectedItemContainer: {
+    backgroundColor: '#E8F5E9',
+  },
+  dropdownSelectedItemLabel: {
+    color: '#2E7D32',
+    fontFamily: 'Roboto-Bold',
+    fontWeight: 'bold',
+  },
+  dropdownListItemLabel: {
+    fontSize: 15,
+    color: '#212121',
+    fontFamily: 'Roboto-Regular',
+  },
+  dropdownListItemContainer: {
+    height: 45,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
   dateText: { fontSize: 16, color: '#212121', paddingVertical: 4, fontFamily: 'Roboto-Regular' },
   divider: { height: 1, backgroundColor: '#F5F5F5', marginHorizontal: 40 },

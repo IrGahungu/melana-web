@@ -11,6 +11,7 @@ type Doctor = {
   name: string;
   specialty?: string;
   image?: string;
+  status?: string;
 };
 
 interface Props {
@@ -142,7 +143,7 @@ export default function FeaturedDoctors({ title, items: itemsProp, onViewAll, ba
       setLoading(false);
       return;
     }
-    
+
     if (!country) return;
 
     const fetchDoctors = async () => {
@@ -151,6 +152,7 @@ export default function FeaturedDoctors({ title, items: itemsProp, onViewAll, ba
       const { data, error } = await supabase
         .from('doctor_applications')
         .select('*')
+        .eq('status', 'approved')
         .ilike('country', country.trim())
         .order('created_at', { ascending: false })
         .limit(4);
@@ -164,7 +166,18 @@ export default function FeaturedDoctors({ title, items: itemsProp, onViewAll, ba
       setLoading(false);
     };
     fetchDoctors();
-  }, [itemsProp, country]);
+
+    const channel = supabase
+      .channel('featured-doctors-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_applications', filter: `country=eq.${country}` }, () => {
+        fetchDoctors();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [country]);
 
   // Split into rows of 2
   const rows: Doctor[][] = [];
@@ -297,18 +310,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
+
   skeleton: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#e0e0e0',
     borderRadius: 12,
     alignSelf: 'center',
     marginBottom: 8,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   name: {
     fontSize: 14,

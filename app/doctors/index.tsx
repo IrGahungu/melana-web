@@ -86,7 +86,7 @@ export default function AllDoctorsScreen() {
       onPress={() =>
         router.push({
           pathname: '/doctor/[id]',
-          params: { 
+          params: {
             id: item.id,
             name: item.name || '',
             image: getFullImageUrl(item.image),
@@ -101,7 +101,7 @@ export default function AllDoctorsScreen() {
         {/* Image */}
         <Image
           source={
-            item.image 
+            item.image
               ? { uri: getFullImageUrl(item.image) }
               : require('@/assets/images/two.jpg')
           }
